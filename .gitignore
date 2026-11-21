@@ -1,0 +1,31 @@
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Secrets
+.streamlit/secrets.toml
+.env
+
+# Personal documents and test files
+images/*
+!images/.gitkeep
+*.pdf
+*.docx
+*.xlsx
+*.pptx
+*.mp3
+*.wav
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/

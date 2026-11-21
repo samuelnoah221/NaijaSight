@@ -1,0 +1,15 @@
+
+streamlit>=1.41
+easyocr
+PyMuPDF
+numpy
+pandas
+Pillow
+python-docx
+python-pptx
+striprtf
+EbookLib
+beautifulsoup4
+gTTS
+SpeechRecognition
+openpyxl
