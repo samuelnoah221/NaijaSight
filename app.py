@@ -11,7 +11,7 @@ import secrets
 
 from pathlib import Path
 from datetime import datetime
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageEnhance
 from gtts import gTTS
 
 from docx import Document
@@ -424,10 +424,10 @@ def prepare_image(image):
 
 
 def crop_main_document(image):
-    """A conservative crop for landscape desktop screenshots.
+    """Apply a conservative crop for wide desktop screenshots.
 
-    It removes typical application toolbars and status bars. For portrait
-    photos and page-filling images, it leaves the image unchanged.
+    This is only an approximation, not document-boundary detection. Users
+    should compare it with Read Entire Image because a crop can omit content.
     """
     image = prepare_image(image)
     width, height = image.size
@@ -439,6 +439,27 @@ def crop_main_document(image):
         if right - left > 100 and bottom - top > 100:
             return image.crop((left, top, right, bottom))
     return image
+
+
+def enhance_for_ocr(image):
+    """Create a separate high-contrast copy while preserving the source image."""
+    image = prepare_image(image)
+    width, height = image.size
+
+    # Enlarge small images so printed characters occupy more pixels.
+    longest_side = max(width, height)
+    if longest_side < 1800:
+        scale = min(1.6, 1800 / max(longest_side, 1))
+        image = image.resize(
+            (max(1, int(width * scale)), max(1, int(height * scale))),
+            Image.Resampling.LANCZOS
+        )
+
+    enhanced = ImageOps.grayscale(image)
+    enhanced = ImageOps.autocontrast(enhanced, cutoff=1)
+    enhanced = ImageEnhance.Contrast(enhanced).enhance(1.25)
+    enhanced = ImageEnhance.Sharpness(enhanced).enhance(1.35)
+    return enhanced.convert("RGB")
 
 
 def group_ocr_results(results):
@@ -491,11 +512,15 @@ def group_ocr_results(results):
     return ordered, flat_items
 
 
-def recognize_image(image, mode="Read Entire Image"):
-    """Extract text. Confidence is an estimate, not a guarantee of correctness."""
+def recognize_image(image, mode="Read Entire Image", quality_mode="Standard"):
+    """Extract text using the selected reading area and image preparation."""
     prepared = prepare_image(image)
+
     if mode == "Read Main Document":
         prepared = crop_main_document(prepared)
+
+    if quality_mode == "Enhanced":
+        prepared = enhance_for_ocr(prepared)
 
     reader = load_ocr_reader()
     results = reader.readtext(
@@ -503,8 +528,12 @@ def recognize_image(image, mode="Read Entire Image"):
         detail=1,
         paragraph=False,
         decoder="beamsearch",
+        text_threshold=0.65,
+        low_text=0.35,
+        link_threshold=0.45,
         batch_size=1,
         workers=0,
+        rotation_info=[90, 180, 270],
     )
 
     lines, items = group_ocr_results(results)
@@ -523,8 +552,8 @@ def recognize_image(image, mode="Read Entire Image"):
     }
 
 
-def image_to_text(image, mode="Read Entire Image"):
-    result = recognize_image(image, mode=mode)
+def image_to_text(image, mode="Read Entire Image", quality_mode="Standard"):
+    result = recognize_image(image, mode=mode, quality_mode=quality_mode)
     st.session_state.last_ocr_confidence = result["confidence"]
     st.session_state.last_uncertain_words = result["uncertain_words"]
     return result["text"]
@@ -534,7 +563,7 @@ def image_to_text(image, mode="Read Entire Image"):
 # 12. IMAGE PROCESSING
 # ============================================================
 
-def process_image(uploaded_file, mode="Read Entire Image"):
+def process_image(uploaded_file, mode="Read Entire Image", quality_mode="Standard"):
 
     file_bytes = check_file_size(uploaded_file)
 
@@ -542,14 +571,14 @@ def process_image(uploaded_file, mode="Read Entire Image"):
         io.BytesIO(file_bytes)
     )
 
-    return image_to_text(image, mode=mode)
+    return image_to_text(image, mode=mode, quality_mode=quality_mode)
 
 
 # ============================================================
 # 13. PDF PROCESSING
 # ============================================================
 
-def process_pdf(uploaded_file):
+def process_pdf(uploaded_file, quality_mode="Standard"):
 
     file_bytes = check_file_size(uploaded_file)
 
@@ -592,7 +621,7 @@ def process_pdf(uploaded_file):
                 )
             )
 
-            ocr_result = recognize_image(image)
+            ocr_result = recognize_image(image, quality_mode=quality_mode)
 
             page_text = ocr_result["text"]
 
@@ -831,7 +860,11 @@ def process_epub(uploaded_file):
 # 21. DOCUMENT PROCESSING ROUTER
 # ============================================================
 
-def process_uploaded_document(uploaded_file, image_mode="Read Entire Image"):
+def process_uploaded_document(
+    uploaded_file,
+    image_mode="Read Entire Image",
+    quality_mode="Standard"
+):
 
     extension = Path(
         uploaded_file.name
@@ -865,7 +898,9 @@ def process_uploaded_document(uploaded_file, image_mode="Read Entire Image"):
         )
 
     if extension in {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}:
-        return processor(uploaded_file, mode=image_mode)
+        return processor(uploaded_file, mode=image_mode, quality_mode=quality_mode)
+    if extension == ".pdf":
+        return processor(uploaded_file, quality_mode=quality_mode)
     return processor(uploaded_file)
 
 
@@ -1174,6 +1209,7 @@ def render_result_workspace():
         return
 
     st.subheader("Extracted text")
+    st.caption("OCR confidence is an estimate from detected text regions, not a guarantee that every word is correct.")
 
     # OCR confidence display
     confidence = st.session_state.get(
@@ -1338,18 +1374,29 @@ def render_document_reader():
 
     image_extensions = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
     image_mode = "Read Entire Image"
+    quality_mode = "Standard"
 
     if uploaded_file:
 
         st.write(
             f"Selected file: **{uploaded_file.name}**"
         )
-        if Path(uploaded_file.name).suffix.lower() in image_extensions:
+        selected_extension = Path(uploaded_file.name).suffix.lower()
+
+        if selected_extension in image_extensions:
             image_mode = st.radio(
                 "Choose how NaijaSight should read this image",
                 ["Read Entire Image", "Read Main Document"],
                 horizontal=True,
-                help="Read Entire Image includes all visible text. Read Main Document uses a conservative crop for wide desktop screenshots; check the result because automatic cropping can miss content."
+                help="Read Entire Image includes all visible text. Read Main Document applies an approximate crop to wide desktop screenshots; it can miss content."
+            )
+
+        if selected_extension in image_extensions or selected_extension == ".pdf":
+            quality_mode = st.radio(
+                "OCR image preparation",
+                ["Standard", "Enhanced"],
+                horizontal=True,
+                help="Standard uses the original image. Enhanced creates a grayscale, higher-contrast and slightly enlarged copy. Enhanced may help faint text but can also make some images worse."
             )
 
         st.caption(
@@ -1371,7 +1418,8 @@ def render_document_reader():
 
                     extracted_text = process_uploaded_document(
                         uploaded_file,
-                        image_mode=image_mode
+                        image_mode=image_mode,
+                        quality_mode=quality_mode
                     )
 
                 if extracted_text:
@@ -1431,6 +1479,12 @@ def render_camera_scanner():
         ["Read Entire Image", "Read Main Document"],
         horizontal=True,
     )
+    camera_quality = st.radio(
+        "OCR image preparation",
+        ["Standard", "Enhanced"],
+        horizontal=True,
+        help="Enhanced creates a grayscale, higher-contrast and slightly enlarged copy. Compare both methods if the result is unclear."
+    )
     camera_image = st.camera_input(
         "Take a picture"
     )
@@ -1456,7 +1510,8 @@ def render_camera_scanner():
 
                     extracted_text = image_to_text(
                         image,
-                        mode=camera_mode
+                        mode=camera_mode,
+                        quality_mode=camera_quality
                     )
 
                 if extracted_text:
