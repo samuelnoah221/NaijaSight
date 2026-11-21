@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import io
 import re
+import json
 import sqlite3
 import hashlib
 import secrets
@@ -72,6 +73,25 @@ st.markdown(
     .app-subtitle {
         color: #777777;
         font-size: 16px;
+    }
+
+    /* Improve the Streamlit interface on narrow phone screens. */
+    @media (max-width: 640px) {
+        .block-container {
+            padding-left: 0.8rem;
+            padding-right: 0.8rem;
+            padding-top: 1rem;
+        }
+
+        div.stButton > button,
+        div.stDownloadButton > button {
+            min-height: 48px;
+            white-space: normal;
+        }
+
+        [data-testid="stFileUploader"] {
+            width: 100%;
+        }
     }
 
     div.stButton > button {
@@ -1021,6 +1041,187 @@ def render_speech_controls(text, key_prefix):
 
 
 # ============================================================
+# 22B. OFFLINE READER EXPORT
+# ============================================================
+
+def build_offline_reader_html(text, document_title="NaijaSight Offline Reader"):
+    """Build a self-contained HTML reader that can be saved and opened offline."""
+    safe_title = html.escape(str(document_title or "NaijaSight Offline Reader"))
+    # Prevent user text from terminating the embedded script element.
+    embedded_text = json.dumps(str(text or ""), ensure_ascii=False)
+    embedded_text = (
+        embedded_text.replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+    )
+
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#172554">
+<title>{safe_title}</title>
+<style>
+:root {{ color-scheme: light; --bg:#f4f7fb; --panel:#fff; --ink:#172033; --accent:#174ea6; --muted:#526078; }}
+* {{ box-sizing:border-box; }}
+body {{ margin:0; background:var(--bg); color:var(--ink); font-family:Arial, sans-serif; line-height:1.65; }}
+header {{ background:#172554; color:white; padding:20px 16px; }}
+header h1 {{ margin:0 auto; max-width:900px; font-size:1.45rem; }}
+main {{ max-width:900px; margin:20px auto; padding:0 14px 40px; }}
+.panel {{ background:var(--panel); border:1px solid #d8e0ec; border-radius:14px; padding:16px; margin-bottom:16px; }}
+.controls {{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; }}
+button, select {{ min-height:44px; border-radius:9px; border:1px solid #9aa9bd; padding:9px 13px; font-size:1rem; background:white; color:#172033; }}
+button.primary {{ background:var(--accent); color:white; border-color:var(--accent); }}
+button:focus, select:focus, input:focus {{ outline:3px solid #f0b429; outline-offset:2px; }}
+label {{ display:block; font-weight:600; margin:8px 0 4px; }}
+#readerText {{ white-space:pre-wrap; overflow-wrap:anywhere; font-size:1.2rem; line-height:1.8; }}
+#status {{ color:var(--muted); min-height:1.5em; }}
+.small {{ color:var(--muted); font-size:.92rem; }}
+body.high-contrast {{ --bg:#000; --panel:#000; --ink:#fff; --accent:#ffdf00; --muted:#eee; color:#fff; }}
+body.high-contrast header {{ background:#000; border-bottom:2px solid #ffdf00; }}
+body.high-contrast button, body.high-contrast select {{ background:#000; color:#fff; border:2px solid #ffdf00; }}
+body.high-contrast button.primary {{ background:#ffdf00; color:#000; }}
+@media (max-width:600px) {{
+  header h1 {{ font-size:1.2rem; }}
+  main {{ margin:12px auto; padding:0 10px 28px; }}
+  .panel {{ padding:13px; }}
+  .controls button, .controls select {{ flex:1 1 42%; }}
+  #readerText {{ font-size:1.12rem; }}
+}}
+@media (prefers-reduced-motion: reduce) {{ * {{ scroll-behavior:auto !important; }} }}
+</style>
+</head>
+<body>
+<header><h1>NaijaSight — Offline Reader</h1></header>
+<main>
+  <section class="panel" aria-label="Reading controls">
+    <p class="small">This file contains your saved text. After downloading it, you can reopen it without an internet connection. Read-aloud uses voices available on this device and browser.</p>
+    <div class="controls">
+      <button type="button" id="smaller">A− Smaller text</button>
+      <button type="button" id="larger">A+ Larger text</button>
+      <button type="button" id="contrast">High contrast</button>
+    </div>
+    <label for="partSelect">Choose a reading section</label>
+    <select id="partSelect" style="width:100%"></select>
+    <div class="controls" style="margin-top:12px">
+      <button class="primary" type="button" id="read">Read section</button>
+      <button type="button" id="pause">Pause</button>
+      <button type="button" id="resume">Resume</button>
+      <button type="button" id="stop">Stop</button>
+    </div>
+    <p id="status" role="status" aria-live="polite">Your saved document is ready.</p>
+  </section>
+  <section class="panel">
+    <h2 id="sectionHeading">Document text</h2>
+    <article id="readerText" tabindex="0"></article>
+  </section>
+  <p class="small">Privacy: this standalone file does not send its saved text to NaijaSight. Browser speech availability and offline operation depend on the device's installed voices and browser.</p>
+</main>
+<script>
+const originalText = {embedded_text};
+const partSelect = document.getElementById('partSelect');
+const readerText = document.getElementById('readerText');
+const statusLine = document.getElementById('status');
+const sectionHeading = document.getElementById('sectionHeading');
+let parts = [];
+let fontSize = 1.2;
+
+function splitIntoParts(text) {{
+  const paragraphs = text.split(/\\n\\s*\\n/).map(p => p.trim()).filter(Boolean);
+  const output = [];
+  let current = '';
+  for (const paragraph of paragraphs) {{
+    if (paragraph.length <= 3000) {{
+      if (current && (current.length + paragraph.length + 2 > 3000)) {{
+        output.push(current); current = '';
+      }}
+      current = current ? current + '\\n\\n' + paragraph : paragraph;
+      continue;
+    }}
+    if (current) {{ output.push(current); current = ''; }}
+    const sentences = paragraph.match(/[^.!?]+[.!?]*/g) || [paragraph];
+    for (const sentenceRaw of sentences) {{
+      const sentence = sentenceRaw.trim();
+      if (!sentence) continue;
+      if (current && current.length + sentence.length + 1 > 3000) {{
+        output.push(current); current = '';
+      }}
+      if (sentence.length > 3000) {{
+        const words = sentence.split(/\\s+/);
+        for (const word of words) {{
+          if (current && current.length + word.length + 1 > 3000) {{
+            output.push(current); current = '';
+          }}
+          current = current ? current + ' ' + word : word;
+        }}
+      }} else {{
+        current = current ? current + ' ' + sentence : sentence;
+      }}
+    }}
+    if (current) {{ output.push(current); current = ''; }}
+  }}
+  if (current) output.push(current);
+  return output.length ? output : ['No text was saved in this reader.'];
+}}
+
+function showPart() {{
+  const index = Number(partSelect.value || 0);
+  readerText.textContent = parts[index] || '';
+  sectionHeading.textContent = 'Reading section ' + (index + 1) + ' of ' + parts.length;
+  stopSpeech();
+}}
+function stopSpeech() {{
+  if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+}}
+parts = splitIntoParts(originalText);
+parts.forEach((part, index) => {{
+  const option = document.createElement('option');
+  option.value = String(index);
+  option.textContent = 'Section ' + (index + 1) + ' of ' + parts.length;
+  partSelect.appendChild(option);
+}});
+partSelect.addEventListener('change', showPart);
+showPart();
+
+document.getElementById('smaller').addEventListener('click', () => {{
+  fontSize = Math.max(0.85, fontSize - 0.1);
+  readerText.style.fontSize = fontSize + 'rem';
+}});
+document.getElementById('larger').addEventListener('click', () => {{
+  fontSize = Math.min(2.2, fontSize + 0.1);
+  readerText.style.fontSize = fontSize + 'rem';
+}});
+document.getElementById('contrast').addEventListener('click', () => {{
+  document.body.classList.toggle('high-contrast');
+}});
+document.getElementById('read').addEventListener('click', () => {{
+  if (!('speechSynthesis' in window) || !('SpeechSynthesisUtterance' in window)) {{
+    statusLine.textContent = 'Read-aloud is not supported by this browser. You can still read the saved text.';
+    return;
+  }}
+  stopSpeech();
+  const utterance = new SpeechSynthesisUtterance(parts[Number(partSelect.value || 0)]);
+  utterance.onstart = () => statusLine.textContent = 'Reading section aloud.';
+  utterance.onend = () => statusLine.textContent = 'Finished reading this section.';
+  utterance.onerror = () => statusLine.textContent = 'The device could not read this section aloud. Try another browser or device voice.';
+  window.speechSynthesis.speak(utterance);
+}});
+document.getElementById('pause').addEventListener('click', () => {{
+  if ('speechSynthesis' in window) window.speechSynthesis.pause();
+}});
+document.getElementById('resume').addEventListener('click', () => {{
+  if ('speechSynthesis' in window) window.speechSynthesis.resume();
+}});
+document.getElementById('stop').addEventListener('click', () => {{
+  stopSpeech(); statusLine.textContent = 'Reading stopped.';
+}});
+</script>
+</body>
+</html>"""
+
+
+# ============================================================
 # 23. SPEECH TO TEXT
 # ============================================================
 
@@ -1368,7 +1569,6 @@ def render_result_workspace():
     col1, col2 = st.columns(2)
 
     with col1:
-
         st.download_button(
             "Download text",
             data=edited_text,
@@ -1378,15 +1578,25 @@ def render_result_workspace():
         )
 
     with col2:
+        offline_html = build_offline_reader_html(
+            edited_text,
+            st.session_state.get("current_filename") or "NaijaSight Offline Reader"
+        )
+        st.download_button(
+            "Download offline reader",
+            data=offline_html.encode("utf-8"),
+            file_name="naijasight_offline_reader.html",
+            mime="text/html",
+            use_container_width=True,
+            help="Save this self-contained reader to your phone or computer and open it later without internet."
+        )
 
-        if st.button(
-            "Clear result",
-            use_container_width=True
-        ):
-
-            clear_current_result()
-
-            st.rerun()
+    if st.button(
+        "Clear result",
+        use_container_width=True
+    ):
+        clear_current_result()
+        st.rerun()
 
     st.divider()
     st.subheader("Listen to the text")
