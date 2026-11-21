@@ -339,6 +339,7 @@ defaults = {
     "username": None,
     "full_name": None,
     "demo_mode": False,
+    "nav_page": "Home",
 
     "extracted_text": "",
     "current_filename": "",
@@ -1089,8 +1090,6 @@ def render_sidebar():
             "Home", "Read a document", "Scan with camera",
             "Listen to text", "Voice tools", "Activity history"
         ]
-        if "nav_page" not in st.session_state:
-            st.session_state.nav_page = "Home"
         page = st.radio(
             "Navigation",
             pages,
@@ -1118,8 +1117,8 @@ def render_sidebar():
 # ============================================================
 
 def go_to_page(page):
-    st.session_state.nav_page = page
-    st.rerun()
+    """Change the navigation radio value before Streamlit reruns the app."""
+    st.session_state["nav_page"] = page
 
 
 def render_home():
@@ -1143,8 +1142,14 @@ def render_home():
             with st.container(border=True):
                 st.markdown(f"### {symbol}  {title}")
                 st.write(description)
-                if st.button("Open " + title, key="home_" + destination, use_container_width=True, type="primary"):
-                    go_to_page(destination)
+                st.button(
+                    "Open " + title,
+                    key="home_" + destination,
+                    use_container_width=True,
+                    type="primary",
+                    on_click=go_to_page,
+                    args=(destination,)
+                )
 
     st.divider()
     st.subheader("Getting started")
