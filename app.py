@@ -908,29 +908,116 @@ def process_uploaded_document(
 # 22. TEXT TO SPEECH
 # ============================================================
 
-def create_speech(text):
-
+def create_speech(text, slow=False):
     if not text.strip():
-
-        raise ValueError(
-            "There is no text to read."
-        )
-
+        raise ValueError("There is no text to read.")
+    if len(text) > 4500:
+        raise ValueError("This reading part is too long. Choose a smaller paragraph or part.")
     audio_buffer = io.BytesIO()
-
-    speech = gTTS(
-        text=text,
-        lang="en",
-        slow=False
-    )
-
-    speech.write_to_fp(
-        audio_buffer
-    )
-
+    speech = gTTS(text=text, lang="en", slow=slow)
+    speech.write_to_fp(audio_buffer)
     audio_buffer.seek(0)
-
     return audio_buffer
+
+
+def split_text_for_speech(text, max_chars=4000):
+    """Split long text into paragraph/sentence-sized sections."""
+    text = (text or "").strip()
+    if not text:
+        return []
+    paragraphs = [part.strip() for part in re.split(r"\n\s*\n", text) if part.strip()]
+    sections = []
+    for paragraph in paragraphs:
+        if len(paragraph) <= max_chars:
+            sections.append(paragraph)
+            continue
+        sentences = re.split(r"(?<=[.!?])\s+", paragraph)
+        current = ""
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+            if len(sentence) > max_chars:
+                if current:
+                    sections.append(current)
+                    current = ""
+                words = sentence.split()
+                word_part = ""
+                for word in words:
+                    candidate = f"{word_part} {word}".strip()
+                    if len(candidate) > max_chars and word_part:
+                        sections.append(word_part)
+                        word_part = word
+                    else:
+                        word_part = candidate
+                if word_part:
+                    sections.append(word_part)
+                continue
+            candidate = f"{current} {sentence}".strip()
+            if len(candidate) > max_chars and current:
+                sections.append(current)
+                current = sentence
+            else:
+                current = candidate
+        if current:
+            sections.append(current)
+    return sections
+
+
+def render_speech_controls(text, key_prefix):
+    """Consent-based speech controls for short and long text."""
+    sections = split_text_for_speech(text)
+    if not sections:
+        st.info("There is no text available to read aloud yet.")
+        return
+
+    st.caption(
+        f"This text is divided into {len(sections)} reading part(s). "
+        "Choose one part at a time instead of generating the entire document."
+    )
+    selected_part = st.selectbox(
+        "Choose a paragraph or reading part",
+        options=list(range(len(sections))),
+        format_func=lambda index: f"Part {index + 1} of {len(sections)}",
+        key=f"{key_prefix}_speech_part"
+    )
+    speed = st.radio(
+        "Speech speed",
+        ["Normal", "Slower"],
+        horizontal=True,
+        key=f"{key_prefix}_speech_speed",
+        help="Slower uses Google text-to-speech's slow speech setting."
+    )
+    with st.expander("Preview selected reading part"):
+        st.write(sections[selected_part])
+
+    st.warning(
+        "Generating speech sends the selected text to Google's text-to-speech service. "
+        "Do not submit private or sensitive information."
+    )
+    consent = st.checkbox(
+        "I agree to send this text to Google to create speech.",
+        key=f"{key_prefix}_tts_consent"
+    )
+    if st.button(
+        "Generate speech for this part",
+        key=f"{key_prefix}_generate_speech",
+        type="primary",
+        disabled=not consent
+    ):
+        try:
+            with st.spinner("Preparing this reading part..."):
+                audio = create_speech(sections[selected_part], slow=(speed == "Slower"))
+            st.audio(audio, format="audio/mp3")
+            st.download_button(
+                "Download this audio part",
+                data=audio.getvalue(),
+                file_name=f"naijasight_audio_part_{selected_part + 1}.mp3",
+                mime="audio/mpeg",
+                key=f"{key_prefix}_download_audio"
+            )
+        except Exception as error:
+            st.error(f"Could not create speech: {error}")
 
 
 # ============================================================
@@ -1302,51 +1389,8 @@ def render_result_workspace():
             st.rerun()
 
     st.divider()
-
     st.subheader("Listen to the text")
-
-    st.warning(
-        "Text-to-speech sends the text you choose to Google's "
-        "text-to-speech service."
-    )
-
-    allow_tts = st.checkbox(
-        "I agree to send this text to Google to create speech.",
-        key="tts_consent"
-    )
-
-    if st.button(
-        "Generate audio",
-        disabled=not allow_tts
-    ):
-
-        try:
-
-            with st.spinner(
-                "Preparing audio..."
-            ):
-
-                audio = create_speech(
-                    edited_text
-                )
-
-            st.audio(
-                audio,
-                format="audio/mp3"
-            )
-
-            st.download_button(
-                "Download audio",
-                data=audio.getvalue(),
-                file_name="naijasight_audio.mp3",
-                mime="audio/mpeg"
-            )
-
-        except Exception as error:
-
-            st.error(
-                f"Could not create audio: {error}"
-            )
+    render_speech_controls(edited_text, "result")
 
 
 # ============================================================
@@ -1554,19 +1598,18 @@ def render_camera_scanner():
 
 def render_listen_page():
     st.title("Listen to text")
-    st.write("Paste text below, or use text you have already extracted with NaijaSight.")
+    st.write(
+        "Paste text below, or use text you have already extracted with NaijaSight. "
+        "Long text is divided into smaller reading parts."
+    )
     initial_text = st.session_state.get("extracted_text", "")
-    text_to_read = st.text_area("Text to read aloud", value=initial_text, height=260, key="standalone_listen_text")
-    st.warning("Online speech generation sends the text to Google's text-to-speech service. Do not submit private or sensitive information.")
-    consent = st.checkbox("I agree to send this text to Google to create speech.", key="standalone_tts_consent")
-    if st.button("Generate speech", type="primary", disabled=(not consent or not text_to_read.strip())):
-        try:
-            with st.spinner("Preparing audio..."):
-                audio = create_speech(text_to_read)
-            st.audio(audio, format="audio/mp3")
-            st.download_button("Download audio", audio.getvalue(), file_name="naijasight_audio.mp3", mime="audio/mpeg")
-        except Exception as error:
-            st.error(f"Could not create audio: {error}")
+    text_to_read = st.text_area(
+        "Text to read aloud",
+        value=initial_text,
+        height=260,
+        key="standalone_listen_text"
+    )
+    render_speech_controls(text_to_read, "standalone")
 
 
 # ============================================================
