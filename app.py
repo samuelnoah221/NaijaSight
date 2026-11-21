@@ -4,6 +4,7 @@ import fitz
 import numpy as np
 import pandas as pd
 import io
+import html
 import re
 import json
 import sqlite3
