@@ -1,32 +1,25 @@
-
 import streamlit as st
 import easyocr
 import fitz
 import numpy as np
 import pandas as pd
 import io
-import os
 import re
-import csv
 import sqlite3
 import hashlib
 import secrets
-import html
-import time
 
 from pathlib import Path
 from datetime import datetime
 from PIL import Image, ImageOps
 from gtts import gTTS
 
-# Optional document readers
 from docx import Document
 from pptx import Presentation
 from striprtf.striprtf import rtf_to_text
 from ebooklib import epub, ITEM_DOCUMENT
 from bs4 import BeautifulSoup
 
-# Optional voice recognition
 try:
     import speech_recognition as sr
     SPEECH_RECOGNITION_AVAILABLE = True
@@ -35,7 +28,7 @@ except ImportError:
 
 
 # ============================================================
-# PAGE SETTINGS
+# 1. APPLICATION SETTINGS
 # ============================================================
 
 st.set_page_config(
@@ -60,7 +53,7 @@ Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
 
 
 # ============================================================
-# SIMPLE STYLING
+# 2. PAGE STYLING
 # ============================================================
 
 st.markdown(
@@ -76,27 +69,14 @@ st.markdown(
         padding-bottom: 3rem;
     }
 
-    .app-header {
-        padding: 18px 0 12px 0;
-    }
-
     .app-subtitle {
         color: #777777;
         font-size: 16px;
     }
 
-    .small-note {
-        color: #777777;
-        font-size: 13px;
-    }
-
     div.stButton > button {
         border-radius: 8px;
         min-height: 42px;
-    }
-
-    div[data-testid="stFileUploader"] {
-        border-radius: 10px;
     }
 
     </style>
@@ -106,16 +86,20 @@ st.markdown(
 
 
 # ============================================================
-# DATABASE
+# 3. DATABASE
 # ============================================================
 
 def get_connection():
+
     connection = sqlite3.connect(DB_PATH)
+
     connection.row_factory = sqlite3.Row
+
     return connection
 
 
 def init_db():
+
     with get_connection() as conn:
 
         conn.execute(
@@ -151,7 +135,7 @@ init_db()
 
 
 # ============================================================
-# PASSWORD HANDLING
+# 4. PASSWORD SECURITY
 # ============================================================
 
 def hash_password(password, salt=None):
@@ -171,7 +155,10 @@ def hash_password(password, salt=None):
 
 def verify_password(password, stored_hash, salt):
 
-    calculated_hash, _ = hash_password(password, salt)
+    calculated_hash, _ = hash_password(
+        password,
+        salt
+    )
 
     return secrets.compare_digest(
         calculated_hash,
@@ -180,7 +167,7 @@ def verify_password(password, stored_hash, salt):
 
 
 # ============================================================
-# ACCOUNT FUNCTIONS
+# 5. ACCOUNT FUNCTIONS
 # ============================================================
 
 def create_account(full_name, username, password):
@@ -192,18 +179,20 @@ def create_account(full_name, username, password):
         return False, "Please complete all fields."
 
     if len(username) < 3:
-        return False, "Your username must contain at least 3 characters."
+        return False, "Username must contain at least 3 characters."
 
     if not re.fullmatch(r"[a-zA-Z0-9_.-]+", username):
-        return False, "Use only letters, numbers, dots, underscores or hyphens in your username."
+        return False, "Use letters, numbers, dots, underscores or hyphens."
 
     if len(password) < 8:
-        return False, "Your password must contain at least 8 characters."
+        return False, "Password must contain at least 8 characters."
 
     password_hash, salt = hash_password(password)
 
     try:
+
         with get_connection() as conn:
+
             conn.execute(
                 """
                 INSERT INTO users (
@@ -227,6 +216,7 @@ def create_account(full_name, username, password):
         return True, "Your account has been created."
 
     except sqlite3.IntegrityError:
+
         return False, "That username is already in use."
 
 
@@ -249,6 +239,7 @@ def authenticate_user(username, password):
         user["password_hash"],
         user["password_salt"]
     ):
+
         return {
             "id": user["id"],
             "full_name": user["full_name"],
@@ -259,10 +250,10 @@ def authenticate_user(username, password):
 
 
 # ============================================================
-# ACTIVITY HISTORY
+# 6. ACTIVITY HISTORY
 # ============================================================
 
-def log_activity(filename, file_type, text, status="Completed"):
+def log_activity(filename, file_type, text):
 
     if st.session_state.get("demo_mode"):
         return
@@ -272,10 +263,8 @@ def log_activity(filename, file_type, text, status="Completed"):
     if not username:
         return
 
-    word_count = len(text.split())
-    character_count = len(text)
-
     with get_connection() as conn:
+
         conn.execute(
             """
             INSERT INTO activity (
@@ -293,9 +282,9 @@ def log_activity(filename, file_type, text, status="Completed"):
                 username,
                 filename,
                 file_type,
-                word_count,
-                character_count,
-                status,
+                len(text.split()),
+                len(text),
+                "Completed",
                 datetime.now().isoformat(timespec="seconds")
             )
         )
@@ -309,6 +298,7 @@ def get_activity():
     username = st.session_state.get("username")
 
     with get_connection() as conn:
+
         rows = conn.execute(
             """
             SELECT filename, file_type, word_count,
@@ -320,7 +310,9 @@ def get_activity():
             (username,)
         ).fetchall()
 
-    return pd.DataFrame([dict(row) for row in rows])
+    return pd.DataFrame([
+        dict(row) for row in rows
+    ])
 
 
 def delete_activity():
@@ -331,6 +323,7 @@ def delete_activity():
     username = st.session_state.get("username")
 
     with get_connection() as conn:
+
         conn.execute(
             "DELETE FROM activity WHERE username = ?",
             (username,)
@@ -338,7 +331,7 @@ def delete_activity():
 
 
 # ============================================================
-# SESSION STATE
+# 7. SESSION STATE
 # ============================================================
 
 defaults = {
@@ -346,15 +339,35 @@ defaults = {
     "username": None,
     "full_name": None,
     "demo_mode": False,
+
     "extracted_text": "",
     "current_filename": "",
     "current_file_type": "",
+
+    "last_ocr_confidence": None,
+    "last_uncertain_words": [],
+
+    "editable_result": "",
+
     "auth_page": "login"
 }
 
 for key, value in defaults.items():
+
     if key not in st.session_state:
         st.session_state[key] = value
+
+
+def clear_current_result():
+
+    st.session_state.extracted_text = ""
+    st.session_state.current_filename = ""
+    st.session_state.current_file_type = ""
+
+    st.session_state.last_ocr_confidence = None
+    st.session_state.last_uncertain_words = []
+
+    st.session_state.editable_result = ""
 
 
 def logout():
@@ -363,18 +376,17 @@ def logout():
     st.session_state.username = None
     st.session_state.full_name = None
     st.session_state.demo_mode = False
-    st.session_state.extracted_text = ""
-    st.session_state.current_filename = ""
-    st.session_state.current_file_type = ""
+
+    clear_current_result()
 
     st.rerun()
 
 
 # ============================================================
-# EASY OCR
+# 8. LOAD OCR ENGINE
 # ============================================================
 
-@st.cache_resource(show_spinner="Loading text recognition...")
+@st.cache_resource(show_spinner="Loading text recognition engine...")
 def load_ocr_reader():
 
     return easyocr.Reader(
@@ -383,58 +395,157 @@ def load_ocr_reader():
     )
 
 
+# ============================================================
+# 9. FILE SIZE CHECK
+# ============================================================
+
 def check_file_size(uploaded_file):
 
-    file_size = uploaded_file.size
+    if uploaded_file.size > MAX_FILE_SIZE_BYTES:
 
-    if file_size > MAX_FILE_SIZE_BYTES:
         raise ValueError(
-            f"This file is larger than the {MAX_FILE_SIZE_MB} MB upload limit."
+            f"This file exceeds the {MAX_FILE_SIZE_MB} MB upload limit."
         )
 
     return uploaded_file.getvalue()
 
 
-def image_to_text(image):
+# ============================================================
+# 10. IMAGE ENHANCEMENT
+# ============================================================
 
-    if image.width * image.height > MAX_IMAGE_PIXELS:
-        raise ValueError(
-            "This image is too large to process safely."
-        )
-
+def prepare_image(image):
+    """Correct orientation and validate dimensions without damaging text."""
     image = ImageOps.exif_transpose(image)
-    image = image.convert("RGB")
+    if image.width * image.height > MAX_IMAGE_PIXELS:
+        raise ValueError("Image is too large to process safely.")
+    return image.convert("RGB")
+
+
+def crop_main_document(image):
+    """A conservative crop for landscape desktop screenshots.
+
+    It removes typical application toolbars and status bars. For portrait
+    photos and page-filling images, it leaves the image unchanged.
+    """
+    image = prepare_image(image)
+    width, height = image.size
+    if width / max(height, 1) >= 1.25 and width >= 1000:
+        left = int(width * 0.15)
+        top = int(height * 0.22)
+        right = int(width * 0.85)
+        bottom = int(height * 0.96)
+        if right - left > 100 and bottom - top > 100:
+            return image.crop((left, top, right, bottom))
+    return image
+
+
+def group_ocr_results(results):
+    """Group detected text boxes into visual lines, then read left to right."""
+    items = []
+    heights = []
+    for box, detected_text, confidence in results:
+        detected_text = detected_text.strip()
+        if not detected_text:
+            continue
+        xs = [point[0] for point in box]
+        ys = [point[1] for point in box]
+        x0, y0 = min(xs), min(ys)
+        x1, y1 = max(xs), max(ys)
+        height = max(1, y1 - y0)
+        heights.append(height)
+        items.append({
+            "text": detected_text,
+            "confidence": float(confidence),
+            "x": x0,
+            "cy": (y0 + y1) / 2,
+            "height": height,
+        })
+
+    if not items:
+        return [], []
+
+    tolerance = max(8, float(np.median(heights)) * 0.65)
+    items.sort(key=lambda item: (item["cy"], item["x"]))
+    lines = []
+    for item in items:
+        target = None
+        for line in reversed(lines[-3:]):
+            line_cy = sum(part["cy"] for part in line) / len(line)
+            if abs(item["cy"] - line_cy) <= tolerance:
+                target = line
+                break
+        if target is None:
+            lines.append([item])
+        else:
+            target.append(item)
+
+    lines.sort(key=lambda line: min(part["cy"] for part in line))
+    ordered = []
+    for line in lines:
+        line.sort(key=lambda item: item["x"])
+        ordered.append(" ".join(item["text"] for item in line))
+
+    flat_items = [item for line in lines for item in line]
+    return ordered, flat_items
+
+
+def recognize_image(image, mode="Read Entire Image"):
+    """Extract text. Confidence is an estimate, not a guarantee of correctness."""
+    prepared = prepare_image(image)
+    if mode == "Read Main Document":
+        prepared = crop_main_document(prepared)
 
     reader = load_ocr_reader()
-
-    image_array = np.array(image)
-
     results = reader.readtext(
-        image_array,
-        detail=0,
-        paragraph=True
+        np.array(prepared),
+        detail=1,
+        paragraph=False,
+        decoder="beamsearch",
+        batch_size=1,
+        workers=0,
     )
 
-    return "\n".join(results).strip()
+    lines, items = group_ocr_results(results)
+    if not items:
+        return {"text": "", "confidence": 0, "uncertain_words": []}
+
+    confidences = [item["confidence"] for item in items]
+    uncertain_words = [
+        {"text": item["text"], "confidence": round(item["confidence"] * 100, 1)}
+        for item in items if item["confidence"] < 0.60
+    ]
+    return {
+        "text": "\n".join(lines),
+        "confidence": round(sum(confidences) / len(confidences) * 100, 1),
+        "uncertain_words": uncertain_words,
+    }
+
+
+def image_to_text(image, mode="Read Entire Image"):
+    result = recognize_image(image, mode=mode)
+    st.session_state.last_ocr_confidence = result["confidence"]
+    st.session_state.last_uncertain_words = result["uncertain_words"]
+    return result["text"]
 
 
 # ============================================================
-# IMAGE PROCESSING
+# 12. IMAGE PROCESSING
 # ============================================================
 
-def process_image(uploaded_file):
+def process_image(uploaded_file, mode="Read Entire Image"):
 
     file_bytes = check_file_size(uploaded_file)
 
-    image = Image.open(io.BytesIO(file_bytes))
+    image = Image.open(
+        io.BytesIO(file_bytes)
+    )
 
-    text = image_to_text(image)
-
-    return text
+    return image_to_text(image, mode=mode)
 
 
 # ============================================================
-# PDF PROCESSING
+# 13. PDF PROCESSING
 # ============================================================
 
 def process_pdf(uploaded_file):
@@ -447,12 +558,17 @@ def process_pdf(uploaded_file):
     )
 
     if document.page_count > MAX_PDF_PAGES:
+
+        document.close()
+
         raise ValueError(
-            f"This PDF has {document.page_count} pages. "
-            f"The current limit is {MAX_PDF_PAGES} pages."
+            f"This PDF contains more than {MAX_PDF_PAGES} pages."
         )
 
     extracted_pages = []
+
+    ocr_confidences = []
+    all_uncertain_words = []
 
     progress = st.progress(0)
 
@@ -460,7 +576,8 @@ def process_pdf(uploaded_file):
 
         page_text = page.get_text().strip()
 
-        # Use OCR if the page has little or no selectable text.
+        # If the PDF page has little or no selectable text,
+        # convert it into an image and use OCR.
         if len(page_text) < 15:
 
             pix = page.get_pixmap(
@@ -469,10 +586,22 @@ def process_pdf(uploaded_file):
             )
 
             image = Image.open(
-                io.BytesIO(pix.tobytes("png"))
+                io.BytesIO(
+                    pix.tobytes("png")
+                )
             )
 
-            page_text = image_to_text(image)
+            ocr_result = recognize_image(image)
+
+            page_text = ocr_result["text"]
+
+            ocr_confidences.append(
+                ocr_result["confidence"]
+            )
+
+            all_uncertain_words.extend(
+                ocr_result["uncertain_words"]
+            )
 
         extracted_pages.append(
             f"PAGE {page_number + 1}\n{page_text}"
@@ -483,13 +612,27 @@ def process_pdf(uploaded_file):
         )
 
     document.close()
+
     progress.empty()
 
-    return "\n\n".join(extracted_pages).strip()
+    if ocr_confidences:
+
+        st.session_state.last_ocr_confidence = round(
+            sum(ocr_confidences) / len(ocr_confidences),
+            1
+        )
+
+        st.session_state.last_uncertain_words = (
+            all_uncertain_words
+        )
+
+    return "\n\n".join(
+        extracted_pages
+    ).strip()
 
 
 # ============================================================
-# WORD DOCUMENT
+# 14. WORD DOCUMENT PROCESSING
 # ============================================================
 
 def process_docx(uploaded_file):
@@ -500,11 +643,15 @@ def process_docx(uploaded_file):
         io.BytesIO(file_bytes)
     )
 
-    paragraphs = [
-        paragraph.text
-        for paragraph in document.paragraphs
-        if paragraph.text.strip()
-    ]
+    paragraphs = []
+
+    for paragraph in document.paragraphs:
+
+        if paragraph.text.strip():
+
+            paragraphs.append(
+                paragraph.text.strip()
+            )
 
     for table in document.tables:
 
@@ -517,13 +664,16 @@ def process_docx(uploaded_file):
             ]
 
             if row_text:
-                paragraphs.append(" | ".join(row_text))
+
+                paragraphs.append(
+                    " | ".join(row_text)
+                )
 
     return "\n".join(paragraphs).strip()
 
 
 # ============================================================
-# POWERPOINT
+# 15. POWERPOINT PROCESSING
 # ============================================================
 
 def process_pptx(uploaded_file):
@@ -543,17 +693,21 @@ def process_pptx(uploaded_file):
         for shape in slide.shapes:
 
             if hasattr(shape, "text") and shape.text.strip():
-                slide_parts.append(shape.text.strip())
+
+                slide_parts.append(
+                    shape.text.strip()
+                )
 
         slides_text.append(
-            f"SLIDE {index + 1}\n" + "\n".join(slide_parts)
+            f"SLIDE {index + 1}\n"
+            + "\n".join(slide_parts)
         )
 
     return "\n\n".join(slides_text).strip()
 
 
 # ============================================================
-# EXCEL
+# 16. EXCEL PROCESSING
 # ============================================================
 
 def process_xlsx(uploaded_file):
@@ -582,7 +736,7 @@ def process_xlsx(uploaded_file):
 
 
 # ============================================================
-# CSV
+# 17. CSV PROCESSING
 # ============================================================
 
 def process_csv(uploaded_file):
@@ -597,7 +751,7 @@ def process_csv(uploaded_file):
 
 
 # ============================================================
-# TEXT FILE
+# 18. TEXT FILE PROCESSING
 # ============================================================
 
 def process_txt(uploaded_file):
@@ -605,9 +759,13 @@ def process_txt(uploaded_file):
     file_bytes = check_file_size(uploaded_file)
 
     try:
-        return file_bytes.decode("utf-8").strip()
+
+        return file_bytes.decode(
+            "utf-8"
+        ).strip()
 
     except UnicodeDecodeError:
+
         return file_bytes.decode(
             "latin-1",
             errors="replace"
@@ -615,7 +773,7 @@ def process_txt(uploaded_file):
 
 
 # ============================================================
-# RTF
+# 19. RTF PROCESSING
 # ============================================================
 
 def process_rtf(uploaded_file):
@@ -627,11 +785,13 @@ def process_rtf(uploaded_file):
         errors="replace"
     )
 
-    return rtf_to_text(raw_text).strip()
+    return rtf_to_text(
+        raw_text
+    ).strip()
 
 
 # ============================================================
-# EPUB
+# 20. EPUB PROCESSING
 # ============================================================
 
 def process_epub(uploaded_file):
@@ -658,16 +818,19 @@ def process_epub(uploaded_file):
             ).strip()
 
             if chapter_text:
-                chapters.append(chapter_text)
+
+                chapters.append(
+                    chapter_text
+                )
 
     return "\n\n".join(chapters).strip()
 
 
 # ============================================================
-# DOCUMENT ROUTER
+# 21. DOCUMENT PROCESSING ROUTER
 # ============================================================
 
-def process_uploaded_document(uploaded_file):
+def process_uploaded_document(uploaded_file, image_mode="Read Entire Image"):
 
     extension = Path(
         uploaded_file.name
@@ -681,6 +844,7 @@ def process_uploaded_document(uploaded_file):
         ".bmp": process_image,
         ".tif": process_image,
         ".tiff": process_image,
+
         ".pdf": process_pdf,
         ".docx": process_docx,
         ".pptx": process_pptx,
@@ -694,21 +858,27 @@ def process_uploaded_document(uploaded_file):
     processor = processors.get(extension)
 
     if processor is None:
+
         raise ValueError(
             f"The file format {extension} is not supported."
         )
 
+    if extension in {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}:
+        return processor(uploaded_file, mode=image_mode)
     return processor(uploaded_file)
 
 
 # ============================================================
-# TEXT TO SPEECH
+# 22. TEXT TO SPEECH
 # ============================================================
 
 def create_speech(text):
 
     if not text.strip():
-        raise ValueError("There is no text to read.")
+
+        raise ValueError(
+            "There is no text to read."
+        )
 
     audio_buffer = io.BytesIO()
 
@@ -718,7 +888,9 @@ def create_speech(text):
         slow=False
     )
 
-    speech.write_to_fp(audio_buffer)
+    speech.write_to_fp(
+        audio_buffer
+    )
 
     audio_buffer.seek(0)
 
@@ -726,12 +898,13 @@ def create_speech(text):
 
 
 # ============================================================
-# SPEECH TO TEXT
+# 23. SPEECH TO TEXT
 # ============================================================
 
 def transcribe_audio(audio_file):
 
     if not SPEECH_RECOGNITION_AVAILABLE:
+
         raise RuntimeError(
             "Speech recognition is not installed."
         )
@@ -753,20 +926,19 @@ def transcribe_audio(audio_file):
 
 
 # ============================================================
-# AUTHENTICATION PAGE
+# 24. AUTHENTICATION PAGE
 # ============================================================
 
 def render_auth_portal():
 
+    st.title("👁️ NaijaSight")
+
     st.markdown(
         """
-        <div class="app-header">
-            <h1>👁️ NaijaSight</h1>
-            <p class="app-subtitle">
-                A reading assistant for people who are blind
-                or have low vision.
-            </p>
-        </div>
+        <p class="app-subtitle">
+        A reading assistant for people who are blind
+        or have low vision.
+        </p>
         """,
         unsafe_allow_html=True
     )
@@ -809,10 +981,10 @@ def render_auth_portal():
                     st.session_state.full_name = user["full_name"]
                     st.session_state.demo_mode = False
 
-                    st.success("You are now logged in.")
                     st.rerun()
 
                 else:
+
                     st.error(
                         "The username or password is incorrect."
                     )
@@ -850,7 +1022,9 @@ def render_auth_portal():
 
                 if new_password != confirm_password:
 
-                    st.error("Your passwords do not match.")
+                    st.error(
+                        "Your passwords do not match."
+                    )
 
                 else:
 
@@ -861,17 +1035,19 @@ def render_auth_portal():
                     )
 
                     if success:
+
                         st.success(message)
                         st.info("You can now log in.")
 
                     else:
+
                         st.error(message)
 
     st.divider()
 
     st.caption(
-        "You can also explore the app using the demonstration account. "
-        "Demo activity is not saved."
+        "You can explore the application using demonstration mode. "
+        "Activity is not saved in this mode."
     )
 
     if st.button(
@@ -888,7 +1064,7 @@ def render_auth_portal():
 
 
 # ============================================================
-# SIDEBAR
+# 25. SIDEBAR
 # ============================================================
 
 def render_sidebar():
@@ -906,17 +1082,19 @@ def render_sidebar():
         )
 
         if st.session_state.demo_mode:
+
             st.info("Demonstration mode")
 
+        pages = [
+            "Home", "Read a document", "Scan with camera",
+            "Listen to text", "Voice tools", "Activity history"
+        ]
+        if "nav_page" not in st.session_state:
+            st.session_state.nav_page = "Home"
         page = st.radio(
             "Navigation",
-            [
-                "Home",
-                "Read a document",
-                "Scan with camera",
-                "Voice tools",
-                "Activity history"
-            ]
+            pages,
+            key="nav_page"
         )
 
         st.divider()
@@ -929,74 +1107,53 @@ def render_sidebar():
             "Log out",
             use_container_width=True
         ):
+
             logout()
 
     return page
 
 
 # ============================================================
-# HOME PAGE
+# 26. HOME PAGE
 # ============================================================
+
+def go_to_page(page):
+    st.session_state.nav_page = page
+    st.rerun()
+
 
 def render_home():
-
     st.title("Welcome to NaijaSight")
-
-    st.write(
-        "Use NaijaSight to extract text from documents and images, "
-        "edit the result, and listen to the text."
+    st.markdown(
+        "<p class='app-subtitle'>A simple reading assistant for people who are blind or have low vision.</p>",
+        unsafe_allow_html=True,
     )
-
     st.subheader("What would you like to do?")
+    st.caption("Choose an action to open its workspace.")
 
-    col1, col2 = st.columns(2)
-
-    with col1:
-
-        st.markdown("### 📄 Read a document")
-
-        st.write(
-            "Extract text from PDF, Word, PowerPoint, "
-            "Excel, EPUB and other supported files."
-        )
-
-    with col2:
-
-        st.markdown("### 📷 Scan an image")
-
-        st.write(
-            "Take a picture of printed text and convert it into "
-            "editable text."
-        )
-
-    col3, col4 = st.columns(2)
-
-    with col3:
-
-        st.markdown("### 🔊 Listen to text")
-
-        st.write(
-            "Turn extracted text into spoken audio."
-        )
-
-    with col4:
-
-        st.markdown("### 🎙️ Voice tools")
-
-        st.write(
-            "Record speech and convert it into text."
-        )
+    cards = [
+        ("📄", "Read a document", "Extract text from PDF, Word, PowerPoint, Excel, EPUB and more.", "Read a document"),
+        ("📷", "Scan an image", "Upload an image or use your camera to recognise printed text.", "Scan with camera"),
+        ("🔊", "Listen to text", "Paste text or listen to text you have already extracted.", "Listen to text"),
+        ("🎙️", "Voice tools", "Record speech and convert it into text.", "Voice tools"),
+    ]
+    columns = st.columns(2, gap="large")
+    for index, (symbol, title, description, destination) in enumerate(cards):
+        with columns[index % 2]:
+            with st.container(border=True):
+                st.markdown(f"### {symbol}  {title}")
+                st.write(description)
+                if st.button("Open " + title, key="home_" + destination, use_container_width=True, type="primary"):
+                    go_to_page(destination)
 
     st.divider()
-
-    st.info(
-        "For best results, use clear images with good lighting "
-        "and keep the text in focus."
-    )
+    st.subheader("Getting started")
+    st.write("1. Choose a document or image.  2. Extract the text.  3. Review the result.  4. Listen to it or download it.")
+    st.info("For clearer recognition, keep the text in focus and avoid glare. Always check important names, dates and amounts.")
 
 
 # ============================================================
-# RESULT WORKSPACE
+# 27. RESULT WORKSPACE
 # ============================================================
 
 def render_result_workspace():
@@ -1004,20 +1161,76 @@ def render_result_workspace():
     text = st.session_state.extracted_text
 
     if not text:
+
         st.info(
             "Your extracted text will appear here after processing."
         )
+
         return
 
     st.subheader("Extracted text")
+
+    # OCR confidence display
+    confidence = st.session_state.get(
+        "last_ocr_confidence"
+    )
+
+    if confidence is not None:
+
+        st.metric(
+            "OCR confidence",
+            f"{confidence}%"
+        )
+
+        if confidence < 60:
+
+            st.warning(
+                "The OCR engine is uncertain about some of the text. "
+                "Please review the result carefully."
+            )
+
+        elif confidence < 80:
+
+            st.info(
+                "Some parts of the text may need checking."
+            )
+
+        else:
+
+            st.success(
+                "The OCR engine recognised the text with relatively "
+                "high confidence."
+            )
+
+        uncertain = st.session_state.get(
+            "last_uncertain_words",
+            []
+        )
+
+        if uncertain:
+
+            with st.expander(
+                "Review uncertain text"
+            ):
+
+                for item in uncertain:
+
+                    st.write(
+                        f"**{item['text']}** — "
+                        f"{item['confidence']}% confidence"
+                    )
 
     st.caption(
         f"{len(text.split())} words · {len(text)} characters"
     )
 
+    # Keep the editor synchronised with newly extracted text.
+    if st.session_state.get("editable_result") != text:
+
+        st.session_state.editable_result = text
+
     edited_text = st.text_area(
         "Review or edit the extracted text",
-        value=text,
         height=300,
         key="editable_result"
     )
@@ -1043,8 +1256,8 @@ def render_result_workspace():
             use_container_width=True
         ):
 
-            st.session_state.extracted_text = ""
-            st.session_state.current_filename = ""
+            clear_current_result()
+
             st.rerun()
 
     st.divider()
@@ -1053,7 +1266,7 @@ def render_result_workspace():
 
     st.warning(
         "Text-to-speech sends the text you choose to Google's "
-        "text-to-speech service. Only continue if you agree."
+        "text-to-speech service."
     )
 
     allow_tts = st.checkbox(
@@ -1068,7 +1281,9 @@ def render_result_workspace():
 
         try:
 
-            with st.spinner("Preparing audio..."):
+            with st.spinner(
+                "Preparing audio..."
+            ):
 
                 audio = create_speech(
                     edited_text
@@ -1094,7 +1309,7 @@ def render_result_workspace():
 
 
 # ============================================================
-# DOCUMENT READER PAGE
+# 28. DOCUMENT READER PAGE
 # ============================================================
 
 def render_document_reader():
@@ -1103,7 +1318,7 @@ def render_document_reader():
 
     st.write(
         "Upload a document or image. NaijaSight will try to "
-        "extract the text for you."
+        "extract its text."
     )
 
     uploaded_file = st.file_uploader(
@@ -1116,11 +1331,21 @@ def render_document_reader():
         max_upload_size=MAX_FILE_SIZE_MB
     )
 
+    image_extensions = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
+    image_mode = "Read Entire Image"
+
     if uploaded_file:
 
         st.write(
             f"Selected file: **{uploaded_file.name}**"
         )
+        if Path(uploaded_file.name).suffix.lower() in image_extensions:
+            image_mode = st.radio(
+                "Choose how NaijaSight should read this image",
+                ["Read Entire Image", "Read Main Document"],
+                horizontal=True,
+                help="Read Entire Image includes all visible text. Read Main Document uses a conservative crop for wide desktop screenshots; check the result because automatic cropping can miss content."
+            )
 
         st.caption(
             f"File size: {uploaded_file.size / (1024 * 1024):.2f} MB"
@@ -1131,6 +1356,8 @@ def render_document_reader():
             type="primary"
         ):
 
+            clear_current_result()
+
             try:
 
                 with st.spinner(
@@ -1138,16 +1365,23 @@ def render_document_reader():
                 ):
 
                     extracted_text = process_uploaded_document(
-                        uploaded_file
+                        uploaded_file,
+                        image_mode=image_mode
                     )
 
                 if extracted_text:
 
                     st.session_state.extracted_text = extracted_text
-                    st.session_state.current_filename = uploaded_file.name
-                    st.session_state.current_file_type = Path(
+
+                    st.session_state.current_filename = (
                         uploaded_file.name
-                    ).suffix.lower()
+                    )
+
+                    st.session_state.current_file_type = (
+                        Path(uploaded_file.name).suffix.lower()
+                    )
+
+                    st.session_state.editable_result = extracted_text
 
                     log_activity(
                         uploaded_file.name,
@@ -1155,7 +1389,9 @@ def render_document_reader():
                         extracted_text
                     )
 
-                    st.success("Text extraction completed.")
+                    st.success(
+                        "Text extraction completed."
+                    )
 
                 else:
 
@@ -1174,7 +1410,7 @@ def render_document_reader():
 
 
 # ============================================================
-# CAMERA SCANNER
+# 29. CAMERA SCANNER
 # ============================================================
 
 def render_camera_scanner():
@@ -1182,10 +1418,14 @@ def render_camera_scanner():
     st.title("Scan with camera")
 
     st.write(
-        "Use your device camera to take a picture of a page, "
-        "notice, book or printed document."
+        "Take a picture of a page, notice, book or printed document."
     )
 
+    camera_mode = st.radio(
+        "Choose reading mode",
+        ["Read Entire Image", "Read Main Document"],
+        horizontal=True,
+    )
     camera_image = st.camera_input(
         "Take a picture"
     )
@@ -1197,19 +1437,31 @@ def render_camera_scanner():
             type="primary"
         ):
 
+            clear_current_result()
+
             try:
 
-                with st.spinner("Reading the picture..."):
+                with st.spinner(
+                    "Reading the picture..."
+                ):
 
-                    image = Image.open(camera_image)
+                    image = Image.open(
+                        camera_image
+                    )
 
-                    extracted_text = image_to_text(image)
+                    extracted_text = image_to_text(
+                        image,
+                        mode=camera_mode
+                    )
 
                 if extracted_text:
 
                     st.session_state.extracted_text = extracted_text
+
                     st.session_state.current_filename = "Camera scan"
                     st.session_state.current_file_type = "camera"
+
+                    st.session_state.editable_result = extracted_text
 
                     log_activity(
                         "Camera scan",
@@ -1217,7 +1469,9 @@ def render_camera_scanner():
                         extracted_text
                     )
 
-                    st.success("Text extracted.")
+                    st.success(
+                        "Text extracted."
+                    )
 
                 else:
 
@@ -1235,7 +1489,28 @@ def render_camera_scanner():
 
 
 # ============================================================
-# VOICE TOOLS
+# 30. LISTEN TO TEXT
+# ============================================================
+
+def render_listen_page():
+    st.title("Listen to text")
+    st.write("Paste text below, or use text you have already extracted with NaijaSight.")
+    initial_text = st.session_state.get("extracted_text", "")
+    text_to_read = st.text_area("Text to read aloud", value=initial_text, height=260, key="standalone_listen_text")
+    st.warning("Online speech generation sends the text to Google's text-to-speech service. Do not submit private or sensitive information.")
+    consent = st.checkbox("I agree to send this text to Google to create speech.", key="standalone_tts_consent")
+    if st.button("Generate speech", type="primary", disabled=(not consent or not text_to_read.strip())):
+        try:
+            with st.spinner("Preparing audio..."):
+                audio = create_speech(text_to_read)
+            st.audio(audio, format="audio/mp3")
+            st.download_button("Download audio", audio.getvalue(), file_name="naijasight_audio.mp3", mime="audio/mpeg")
+        except Exception as error:
+            st.error(f"Could not create audio: {error}")
+
+
+# ============================================================
+# 31. VOICE TOOLS
 # ============================================================
 
 def render_voice_tools():
@@ -1251,12 +1526,13 @@ def render_voice_tools():
         st.error(
             "The speech recognition package is not installed."
         )
+
         return
 
     st.warning(
-        "Voice recognition sends the recording to Google's "
-        "speech recognition service. Do not record private or "
-        "sensitive information."
+        "Voice recognition sends your recording to Google's "
+        "speech recognition service. Avoid recording private "
+        "or sensitive information."
     )
 
     consent = st.checkbox(
@@ -1281,15 +1557,20 @@ def render_voice_tools():
 
             try:
 
-                with st.spinner("Transcribing your recording..."):
+                with st.spinner(
+                    "Transcribing your recording..."
+                ):
 
                     transcript = transcribe_audio(
                         audio_file
                     )
 
                 st.session_state.extracted_text = transcript
+
                 st.session_state.current_filename = "Voice recording"
                 st.session_state.current_file_type = "audio"
+
+                st.session_state.editable_result = transcript
 
                 log_activity(
                     "Voice recording",
@@ -1297,7 +1578,9 @@ def render_voice_tools():
                     transcript
                 )
 
-                st.success("Transcription completed.")
+                st.success(
+                    "Transcription completed."
+                )
 
             except Exception as error:
 
@@ -1309,7 +1592,7 @@ def render_voice_tools():
 
 
 # ============================================================
-# ACTIVITY HISTORY
+# 32. ACTIVITY HISTORY
 # ============================================================
 
 def render_history():
@@ -1321,6 +1604,7 @@ def render_history():
         st.info(
             "History is not saved in demonstration mode."
         )
+
         return
 
     history = get_activity()
@@ -1330,6 +1614,7 @@ def render_history():
         st.info(
             "You have no saved activity yet."
         )
+
         return
 
     st.write(
@@ -1383,12 +1668,15 @@ def render_history():
 
         delete_activity()
 
-        st.success("Your activity history has been deleted.")
+        st.success(
+            "Your activity history has been deleted."
+        )
+
         st.rerun()
 
 
 # ============================================================
-# MAIN APPLICATION
+# 33. MAIN APPLICATION
 # ============================================================
 
 def render_logged_in_portal():
@@ -1407,6 +1695,10 @@ def render_logged_in_portal():
 
         render_camera_scanner()
 
+    elif page == "Listen to text":
+
+        render_listen_page()
+
     elif page == "Voice tools":
 
         render_voice_tools()
@@ -1419,15 +1711,18 @@ def render_logged_in_portal():
 
     st.caption(
         "NaijaSight is a prototype. Text recognition and speech "
-        "results may contain errors, so check important information."
+        "results may contain errors. Check important information."
     )
 
 
 # ============================================================
-# APPLICATION ENTRY POINT
+# 34. APPLICATION ENTRY POINT
 # ============================================================
 
 if not st.session_state.authenticated:
+
     render_auth_portal()
+
 else:
+
     render_logged_in_portal()
