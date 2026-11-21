@@ -543,17 +543,25 @@ def recognize_image(image, mode="Read Entire Image", quality_mode="Standard"):
         prepared = enhance_for_ocr(prepared)
 
     reader = load_ocr_reader()
+    # Performance-focused OCR settings:
+    # - greedy decoding is much faster than beamsearch on CPU.
+    # - automatic rotation testing runs OCR several extra times and is
+    #   expensive on Streamlit Cloud, so users should rotate sideways photos
+    #   before uploading them.
+    # - a smaller canvas reduces CPU work while retaining useful resolution
+    #   for ordinary document photos and screenshots.
     results = reader.readtext(
         np.array(prepared),
         detail=1,
         paragraph=False,
-        decoder="beamsearch",
+        decoder="greedy",
         text_threshold=0.65,
         low_text=0.35,
         link_threshold=0.45,
         batch_size=1,
         workers=0,
-        rotation_info=[90, 180, 270],
+        canvas_size=1600,
+        mag_ratio=1.0,
     )
 
     lines, items = group_ocr_results(results)
@@ -1657,6 +1665,13 @@ def render_document_reader():
             f"File size: {uploaded_file.size / (1024 * 1024):.2f} MB"
         )
 
+        if selected_extension in image_extensions:
+            st.info(
+                "For faster scanning, use a clear, upright image. "
+                "Rotate sideways photos before uploading. The faster OCR "
+                "settings avoid repeated rotation and beam-search passes."
+            )
+
         if st.button(
             "Extract text",
             type="primary"
@@ -1667,7 +1682,8 @@ def render_document_reader():
             try:
 
                 with st.spinner(
-                    "Reading your file. This may take a while..."
+                    "Preparing the OCR engine and reading your image. "
+                    "The first scan after a server restart can take longer..."
                 ):
 
                     extracted_text = process_uploaded_document(
