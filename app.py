@@ -43,7 +43,7 @@ st.set_page_config(
 )
 
 APP_NAME = "NaijaSight"
-APP_VERSION = "2.3-DSN"
+APP_VERSION = "2.4-DSN"
 BASE_DIR = Path(__file__).parent
 DB_PATH = BASE_DIR / "naijasight_portal.db"
 
@@ -57,211 +57,250 @@ Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
 
 
 # ============================================================
-# 2. EDITORIAL PORTAL, LOW-VISION & MOBILE STYLING
+# 2. CLEAN PRODUCT STYLING, SCOPED CONTROLS & LOW-VISION MODES
 # ============================================================
 
-def apply_portal_styles(vision_theme: str = "Standard", reader_font_px: int = 18):
-    if vision_theme == "High Contrast (Print Ledger)":
+def apply_portal_styles(vision_theme: str = "Standard (Crisp Light)", reader_font_px: int = 18):
+    if vision_theme == "High Contrast (Pure White / Black)":
         bg_color = "#FFFFFF"
+        sidebar_bg = "#FFFFFF"
         card_bg = "#FFFFFF"
         text_color = "#000000"
-        muted_color = "#262626"
+        muted_color = "#1F2937"
         border_color = "#000000"
-        banner_bg = "#FFFFFF"
-        banner_text = "#000000"
-        banner_border = "#8B1E1E"
-        tag_bg = "#F4F4F5"
+        tag_bg = "#F3F4F6"
         tag_text = "#000000"
         tag_border = "#000000"
-        accent_color = "#8B1E1E"
-        accent_hover = "#691515"
-        ochre_color = "#8B1E1E"
+        accent_color = "#0F172A"
+        accent_hover = "#000000"
+        focus_color = "#1D4ED8"
         input_bg = "#FFFFFF"
-    elif vision_theme == "Low-Glare Night (Warm Charcoal)":
-        bg_color = "#161615"
-        card_bg = "#201F1D"
-        text_color = "#F4F1EA"
-        muted_color = "#C7C2B8"
-        border_color = "#3A3732"
-        banner_bg = "#201F1D"
-        banner_text = "#F4F1EA"
-        banner_border = "#D97706"
-        tag_bg = "#2C2A27"
-        tag_text = "#F4F1EA"
-        tag_border = "#524E48"
-        accent_color = "#2F6F57"
-        accent_hover = "#245744"
-        ochre_color = "#D97706"
-        input_bg = "#1A1917"
+        secondary_btn_bg = "#FFFFFF"
+        secondary_btn_text = "#000000"
+    elif vision_theme == "Low-Glare Slate":
+        bg_color = "#111317"
+        sidebar_bg = "#16191F"
+        card_bg = "#1B1F27"
+        text_color = "#F3F4F6"
+        muted_color = "#9CA3AF"
+        border_color = "#2D3340"
+        tag_bg = "#232834"
+        tag_text = "#E5E7EB"
+        tag_border = "#374151"
+        accent_color = "#2563EB"
+        accent_hover = "#1D4ED8"
+        focus_color = "#60A5FA"
+        input_bg = "#14171D"
+        secondary_btn_bg = "#232834"
+        secondary_btn_text = "#F3F4F6"
     else:
-        # Editorial Stone & Botanical Forest — calm, tactile, non-AI aesthetic
-        bg_color = "#F7F5F0"
-        card_bg = "#FFFDF9"
-        text_color = "#1C1917"
-        muted_color = "#57534E"
-        border_color = "#E4DFD5"
-        banner_bg = "#FFFDF9"
-        banner_text = "#1C1917"
-        banner_border = "#1E4D3B"
-        tag_bg = "#F2EFE9"
-        tag_text = "#1E4D3B"
-        tag_border = "#D6D0C4"
-        accent_color = "#1E4D3B"
-        accent_hover = "#163B2D"
-        ochre_color = "#B45309"
-        input_bg = "#FFFDF9"
+        # Clean YouTube-inspired neutral product surface with restrained cobalt accent
+        bg_color = "#F9FAFB"
+        sidebar_bg = "#FFFFFF"
+        card_bg = "#FFFFFF"
+        text_color = "#0F172A"
+        muted_color = "#4B5563"
+        border_color = "#E5E7EB"
+        tag_bg = "#F3F4F6"
+        tag_text = "#1F2937"
+        tag_border = "#D1D5DB"
+        accent_color = "#1D4ED8"
+        accent_hover = "#1E40AF"
+        focus_color = "#1D4ED8"
+        input_bg = "#FFFFFF"
+        secondary_btn_bg = "#F3F4F6"
+        secondary_btn_text = "#111827"
 
     st.markdown(
         f"""
         <style>
         :root {{
-            --portal-forest: #1E4D3B;
-            --portal-ochre: {ochre_color};
-            --portal-accent: {accent_color};
-            --portal-accent-hover: {accent_hover};
-            --portal-bg: {bg_color};
-            --portal-card: {card_bg};
-            --portal-border: {border_color};
-            --portal-text: {text_color};
-            --portal-muted: {muted_color};
-            --portal-input-bg: {input_bg};
-            --banner-bg: {banner_bg};
-            --banner-text: {banner_text};
-            --banner-border: {banner_border};
-            --tag-bg: {tag_bg};
-            --tag-text: {tag_text};
-            --tag-border: {tag_border};
+            --ns-bg: {bg_color};
+            --ns-sidebar: {sidebar_bg};
+            --ns-card: {card_bg};
+            --ns-text: {text_color};
+            --ns-muted: {muted_color};
+            --ns-border: {border_color};
+            --ns-tag-bg: {tag_bg};
+            --ns-tag-text: {tag_text};
+            --ns-tag-border: {tag_border};
+            --ns-accent: {accent_color};
+            --ns-accent-hover: {accent_hover};
+            --ns-focus: {focus_color};
+            --ns-input-bg: {input_bg};
+            --ns-sec-btn-bg: {secondary_btn_bg};
+            --ns-sec-btn-text: {secondary_btn_text};
         }}
 
+        /* Main app surface */
         [data-testid="stAppViewContainer"] {{
-            background-color: var(--portal-bg);
-            color: var(--portal-text);
+            background-color: var(--ns-bg) !important;
+            color: var(--ns-text) !important;
         }}
 
-        [data-testid="stAppViewContainer"] p,
-        [data-testid="stAppViewContainer"] li,
-        [data-testid="stAppViewContainer"] label,
-        [data-testid="stAppViewContainer"] .stMarkdown {{
-            color: var(--portal-text);
+        [data-testid="stHeader"] {{
+            background-color: transparent !important;
+        }}
+
+        /* Explicit sidebar surface so it never falls back to black */
+        [data-testid="stSidebar"] {{
+            background-color: var(--ns-sidebar) !important;
+            color: var(--ns-text) !important;
+            border-right: 1px solid var(--ns-border) !important;
+        }}
+
+        [data-testid="stSidebar"] * {{
+            color: var(--ns-text);
+        }}
+
+        [data-testid="stSidebar"] .stCaption,
+        [data-testid="stSidebar"] small {{
+            color: var(--ns-muted) !important;
+        }}
+
+        [data-testid="stAppViewContainer"] .stMarkdown,
+        [data-testid="stAppViewContainer"] .stMarkdown p,
+        [data-testid="stAppViewContainer"] .stMarkdown li,
+        [data-testid="stAppViewContainer"] label {{
+            color: var(--ns-text);
         }}
 
         .block-container {{
-            max-width: 1180px;
+            max-width: 1160px;
             padding-top: 1.5rem;
             padding-bottom: 3.5rem;
         }}
 
-        .portal-banner {{
-            background: var(--banner-bg);
-            color: var(--banner-text);
-            padding: 1.3rem 1.55rem;
+        /* Clean top workspace header bar */
+        .ns-header-bar {{
+            background: var(--ns-card);
+            border: 1px solid var(--ns-border);
             border-radius: 12px;
-            margin-bottom: 1.35rem;
-            border: 1px solid var(--portal-border);
-            border-left: 5px solid var(--banner-border);
+            padding: 1.15rem 1.4rem;
+            margin-bottom: 1.25rem;
             display: flex;
             flex-wrap: wrap;
             justify-content: space-between;
             align-items: center;
-            gap: 1rem;
+            gap: 0.9rem;
         }}
 
-        .portal-banner h1,
-        .portal-banner h2,
-        .portal-banner p,
-        .portal-banner strong {{
-            color: var(--banner-text) !important;
+        .ns-header-bar h1,
+        .ns-header-bar h2,
+        .ns-header-bar p,
+        .ns-header-bar strong {{
+            color: var(--ns-text) !important;
             margin: 0 !important;
         }}
 
-        .portal-banner p {{
-            color: var(--portal-muted) !important;
+        .ns-header-bar p {{
+            color: var(--ns-muted) !important;
             margin-top: 0.2rem !important;
-            font-size: 0.95rem;
+            font-size: 0.92rem;
         }}
 
-        .portal-tag {{
-            background: var(--tag-bg);
-            border: 1px solid var(--tag-border);
-            color: var(--tag-text);
-            padding: 0.32rem 0.72rem;
-            border-radius: 6px;
-            font-size: 0.8rem;
+        .ns-chip-row {{
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }}
+
+        .ns-chip {{
+            background: var(--ns-tag-bg);
+            border: 1px solid var(--ns-tag-border);
+            color: var(--ns-tag-text);
+            padding: 0.3rem 0.7rem;
+            border-radius: 999px;
+            font-size: 0.78rem;
             font-weight: 600;
-            letter-spacing: 0.01em;
         }}
 
-        .kpi-card {{
-            background: var(--portal-card);
-            border: 1px solid var(--portal-border);
-            border-top: 3px solid var(--portal-accent);
-            border-radius: 10px;
+        /* Metric cards scoped to KPI summary */
+        .ns-kpi-card {{
+            background: var(--ns-card);
+            border: 1px solid var(--ns-border);
+            border-radius: 12px;
             padding: 0.95rem 1.1rem;
             margin-bottom: 0.5rem;
         }}
 
-        .kpi-label {{
-            font-size: 0.75rem;
+        .ns-kpi-label {{
+            font-size: 0.74rem;
             font-weight: 700;
             text-transform: uppercase;
-            letter-spacing: 0.06em;
-            color: var(--portal-muted);
+            letter-spacing: 0.05em;
+            color: var(--ns-muted);
         }}
 
-        .kpi-value {{
-            font-size: 1.45rem;
+        .ns-kpi-value {{
+            font-size: 1.4rem;
             font-weight: 700;
-            color: var(--portal-text);
+            color: var(--ns-text);
             margin-top: 0.2rem;
         }}
 
-        .triage-box {{
-            background: var(--portal-card);
-            border: 1px solid var(--portal-border);
-            border-left: 4px solid var(--portal-ochre);
-            border-radius: 10px;
+        /* Triage summary card */
+        .ns-triage-card {{
+            background: var(--ns-card);
+            border: 1px solid var(--ns-border);
+            border-left: 4px solid var(--ns-accent);
+            border-radius: 12px;
             padding: 1rem 1.2rem;
-            margin-bottom: 1rem;
-            color: var(--portal-text);
+            margin: 0.85rem 0 1rem 0;
+            color: var(--ns-text);
         }}
 
+        /* Buttons: crisp cobalt primary, clean neutral secondary */
         div.stButton > button[kind="primary"] {{
-            background-color: var(--portal-accent);
-            border-color: var(--portal-accent);
-            color: #FFFDF9;
-        }}
-
-        div.stButton > button[kind="primary"]:hover {{
-            background-color: var(--portal-accent-hover);
-            border-color: var(--portal-accent-hover);
-            color: #FFFDF9;
-        }}
-
-        div.stButton > button,
-        div.stDownloadButton > button {{
+            background-color: var(--ns-accent) !important;
+            border: 1px solid var(--ns-accent) !important;
+            color: #FFFFFF !important;
             border-radius: 8px;
-            min-height: 46px;
+            min-height: 42px;
             font-weight: 600;
         }}
 
-        textarea,
+        div.stButton > button[kind="primary"]:hover {{
+            background-color: var(--ns-accent-hover) !important;
+            border-color: var(--ns-accent-hover) !important;
+            color: #FFFFFF !important;
+        }}
+
+        div.stButton > button[kind="secondary"],
+        div.stDownloadButton > button {{
+            background-color: var(--ns-sec-btn-bg) !important;
+            border: 1px solid var(--ns-border) !important;
+            color: var(--ns-sec-btn-text) !important;
+            border-radius: 8px;
+            min-height: 42px;
+            font-weight: 600;
+        }}
+
+        /* Scoped text area styling: ONLY text areas get reader_font_px */
         [data-testid="stTextArea"] textarea {{
             font-size: {reader_font_px}px !important;
             line-height: 1.65 !important;
-            background-color: var(--portal-input-bg) !important;
-            color: var(--portal-text) !important;
-            border-color: var(--portal-border) !important;
+            background-color: var(--ns-input-bg) !important;
+            color: var(--ns-text) !important;
+            border: 1px solid var(--ns-border) !important;
+            border-radius: 10px !important;
+        }}
+
+        [data-testid="stTextInput"] input {{
+            background-color: var(--ns-input-bg) !important;
+            color: var(--ns-text) !important;
+            border: 1px solid var(--ns-border) !important;
+            border-radius: 8px !important;
         }}
 
         button:focus-visible,
         input:focus-visible,
         textarea:focus-visible,
         select:focus-visible {{
-            outline: 3px solid var(--portal-ochre) !important;
+            outline: 2px solid var(--ns-focus) !important;
             outline-offset: 2px !important;
         }}
 
-        /* Mobile & Phone Responsiveness */
         @media (max-width: 768px) {{
             .block-container {{
                 padding-left: 0.85rem;
@@ -269,21 +308,17 @@ def apply_portal_styles(vision_theme: str = "Standard", reader_font_px: int = 18
                 padding-top: 1rem;
             }}
 
-            .portal-banner {{
-                padding: 1.1rem;
+            .ns-header-bar {{
+                padding: 1rem;
                 flex-direction: column;
                 align-items: flex-start;
             }}
 
             div.stButton > button,
             div.stDownloadButton > button {{
-                min-height: 52px;
+                min-height: 48px;
                 width: 100%;
                 white-space: normal;
-            }}
-
-            [data-testid="stFileUploader"] {{
-                width: 100%;
             }}
         }}
         </style>
@@ -684,12 +719,12 @@ def build_pdf_report_bytes(records: list[dict]) -> bytes:
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
 
-    pdf.set_fill_color(30, 77, 59)
-    pdf.set_text_color(255, 253, 249)
+    pdf.set_fill_color(29, 78, 216)
+    pdf.set_text_color(255, 255, 255)
     pdf.set_font("Helvetica", "B", 15)
     pdf.cell(0, 12, _sanitize_pdf_text("NaijaSight Portal - Extraction & Activity Report"), ln=True, fill=True)
 
-    pdf.set_text_color(28, 25, 23)
+    pdf.set_text_color(31, 41, 55)
     pdf.set_font("Helvetica", "", 10)
     pdf.ln(3)
     user_label = f"{st.session_state.get('full_name', '')} (@{st.session_state.get('username', '')})"
@@ -699,10 +734,10 @@ def build_pdf_report_bytes(records: list[dict]) -> bytes:
     pdf.ln(4)
 
     for idx, rec in enumerate(records, start=1):
-        pdf.set_draw_color(214, 208, 196)
-        pdf.set_fill_color(242, 239, 233)
+        pdf.set_draw_color(209, 213, 219)
+        pdf.set_fill_color(243, 244, 246)
         pdf.set_font("Helvetica", "B", 11)
-        pdf.set_text_color(30, 77, 59)
+        pdf.set_text_color(15, 23, 42)
         title_line = (
             f"{idx}. {rec['filename']}  [{rec['file_type'] or 'file'}]  "
             f"| {rec['word_count']} words | {rec['created_at']}"
@@ -716,7 +751,7 @@ def build_pdf_report_bytes(records: list[dict]) -> bytes:
             body = body[:2500] + "\n... [Truncated in PDF preview; full text included in TXT/Excel export]"
 
         pdf.set_font("Helvetica", "", 10)
-        pdf.set_text_color(28, 25, 23)
+        pdf.set_text_color(17, 24, 39)
         pdf.multi_cell(0, 5.5, _sanitize_pdf_text(body), border="LRB")
         pdf.ln(4)
 
@@ -744,7 +779,7 @@ defaults = {
     "last_process_ms": None,
 
     "editable_result": "",
-    "vision_theme": "Standard",
+    "vision_theme": "Standard (Crisp Light)",
     "reader_font_px": 18,
 }
 
@@ -1225,14 +1260,14 @@ def render_instant_browser_tts(text: str, button_label: str = "🔊 Read Aloud O
 
     components.html(
         f"""
-        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; font-family:Arial,sans-serif;">
-            <button id="speakBtn" style="background:#1E4D3B;color:#FFFDF9;border:none;border-radius:8px;padding:10px 14px;font-weight:600;cursor:pointer;">
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">
+            <button id="speakBtn" style="background:#1D4ED8;color:#FFFFFF;border:none;border-radius:8px;padding:9px 14px;font-weight:600;cursor:pointer;">
                 {safe_label}
             </button>
-            <button id="stopBtn" style="background:#F2EFE9;color:#1C1917;border:1px solid #C8C1B4;border-radius:8px;padding:10px 14px;font-weight:600;cursor:pointer;">
+            <button id="stopBtn" style="background:#F3F4F6;color:#111827;border:1px solid #D1D5DB;border-radius:8px;padding:9px 14px;font-weight:600;cursor:pointer;">
                 ⏹ Stop
             </button>
-            <span id="ttsStatus" style="font-size:13px;color:#57534E;"></span>
+            <span id="ttsStatus" style="font-size:13px;color:#4B5563;"></span>
         </div>
         <script>
         const txt = {payload};
@@ -1254,7 +1289,7 @@ def render_instant_browser_tts(text: str, button_label: str = "🔊 Read Aloud O
         }};
         </script>
         """,
-        height=56,
+        height=52,
     )
 
 
@@ -1265,7 +1300,7 @@ def render_triage_panel(text: str, key_prefix: str):
 
     st.markdown(
         """
-        <div class="triage-box">
+        <div class="ns-triage-card">
             <strong>⚡ Key Facts First (Bill, Prescription & Notice Triage)</strong><br>
             <span>Critical figures, dates, dosage flags, and warnings surfaced before full-text reading.</span>
         </div>
@@ -1459,34 +1494,34 @@ def build_offline_reader_html(text, document_title="NaijaSight Offline Reader"):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#1E4D3B">
+<meta name="theme-color" content="#1d4ed8">
 <title>{safe_title}</title>
 <style>
-:root {{ color-scheme: light; --bg:#f7f5f0; --panel:#fffdf9; --ink:#1c1917; --accent:#1e4d3b; --muted:#57534e; }}
+:root {{ color-scheme: light; --bg:#f9fafb; --panel:#ffffff; --ink:#111827; --accent:#1d4ed8; --muted:#4b5563; }}
 * {{ box-sizing:border-box; }}
-body {{ margin:0; background:var(--bg); color:var(--ink); font-family:Arial, sans-serif; line-height:1.65; }}
-header {{ background:#1e4d3b; color:#fffdf9; padding:20px 16px; }}
-header h1 {{ margin:0 auto; max-width:900px; font-size:1.45rem; }}
+body {{ margin:0; background:var(--bg); color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif; line-height:1.65; }}
+header {{ background:#ffffff; color:#111827; border-bottom:1px solid #e5e7eb; padding:18px 16px; }}
+header h1 {{ margin:0 auto; max-width:900px; font-size:1.35rem; }}
 main {{ max-width:900px; margin:20px auto; padding:0 14px 40px; }}
-.panel {{ background:var(--panel); border:1px solid #e4dfd5; border-radius:12px; padding:16px; margin-bottom:16px; }}
+.panel {{ background:var(--panel); border:1px solid #e5e7eb; border-radius:12px; padding:16px; margin-bottom:16px; }}
 .controls {{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; }}
-button, select {{ min-height:44px; border-radius:8px; border:1px solid #c8c1b4; padding:9px 13px; font-size:1rem; background:#fffdf9; color:#1c1917; }}
-button.primary {{ background:var(--accent); color:#fffdf9; border-color:var(--accent); }}
-button:focus, select:focus, input:focus {{ outline:3px solid #b45309; outline-offset:2px; }}
-label {{ display:block; font-weight:600; margin:8px 0 4px; }}
-#readerText {{ white-space:pre-wrap; overflow-wrap:anywhere; font-size:1.2rem; line-height:1.8; }}
+button, select {{ min-height:42px; border-radius:8px; border:1px solid #d1d5db; padding:8px 13px; font-size:0.98rem; background:#f9fafb; color:#111827; cursor:pointer; }}
+button.primary {{ background:var(--accent); color:#ffffff; border-color:var(--accent); }}
+button:focus, select:focus, input:focus {{ outline:2px solid #1d4ed8; outline-offset:2px; }}
+label {{ display:block; font-weight:600; margin:10px 0 4px; }}
+#readerText {{ white-space:pre-wrap; overflow-wrap:anywhere; font-size:1.15rem; line-height:1.8; }}
 #status {{ color:var(--muted); min-height:1.5em; }}
 .small {{ color:var(--muted); font-size:.92rem; }}
-body.high-contrast {{ --bg:#ffffff; --panel:#ffffff; --ink:#000000; --accent:#8b1e1e; --muted:#262626; color:#000000; }}
+body.high-contrast {{ --bg:#ffffff; --panel:#ffffff; --ink:#000000; --accent:#000000; --muted:#1f2937; color:#000000; }}
 body.high-contrast header {{ background:#ffffff; color:#000000; border-bottom:2px solid #000000; }}
 body.high-contrast button, body.high-contrast select {{ background:#ffffff; color:#000000; border:2px solid #000000; }}
-body.high-contrast button.primary {{ background:#8b1e1e; color:#ffffff; }}
+body.high-contrast button.primary {{ background:#000000; color:#ffffff; }}
 @media (max-width:600px) {{
-  header h1 {{ font-size:1.2rem; }}
+  header h1 {{ font-size:1.15rem; }}
   main {{ margin:12px auto; padding:0 10px 28px; }}
   .panel {{ padding:13px; }}
   .controls button, .controls select {{ flex:1 1 42%; }}
-  #readerText {{ font-size:1.12rem; }}
+  #readerText {{ font-size:1.1rem; }}
 }}
 </style>
 </head>
@@ -1522,7 +1557,7 @@ const readerText = document.getElementById('readerText');
 const statusLine = document.getElementById('status');
 const sectionHeading = document.getElementById('sectionHeading');
 let parts = [];
-let fontSize = 1.2;
+let fontSize = 1.15;
 
 function splitIntoParts(text) {{
   const paragraphs = text.split(/\\n\\s*\\n/).map(p => p.trim()).filter(Boolean);
@@ -1631,15 +1666,15 @@ def transcribe_audio(audio_file):
 def render_auth_portal():
     st.markdown(
         """
-        <div class="portal-banner">
+        <div class="ns-header-bar">
             <div>
-                <h1>👁️ NaijaSight Portal</h1>
-                <p>Accessible Document Intelligence, Bill/Prescription Triage & Voice Suite</p>
+                <h1>👁️ NaijaSight</h1>
+                <p>Accessible Document Intelligence, Bill & Prescription Triage, and Voice Suite</p>
             </div>
-            <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                <span class="portal-tag">SQLite + Excel + PDF</span>
-                <span class="portal-tag">Low-Vision Adaptive</span>
-                <span class="portal-tag">Up to 500 MB</span>
+            <div class="ns-chip-row">
+                <span class="ns-chip">SQLite + Excel + PDF</span>
+                <span class="ns-chip">Low-Vision Ready</span>
+                <span class="ns-chip">Up to 500 MB</span>
             </div>
         </div>
         """,
@@ -1649,24 +1684,24 @@ def render_auth_portal():
     col_left, col_right = st.columns([1.15, 1], gap="large")
 
     with col_left:
-        st.subheader("Built for Clarity, Speed & Accessibility")
+        st.subheader("Clear, Structured Document & Voice Tools")
         st.write(
-            "NaijaSight empowers blind, low-vision, and busy users to read documents, "
-            "triage utility bills and prescriptions first, scan printed pages, generate speech, "
-            "and retain a searchable database record of their work."
+            "Built for blind, low-vision, and everyday readers who need fast extraction, "
+            "key-fact triage on bills and prescriptions, offline browser speech, "
+            "and persistent record management."
         )
         st.markdown(
             """
             - **Read a document:** Extract text from PDF, Word, Excel, CSV, PowerPoint, EPUB, RTF, TXT, and images with key-fact triage
-            - **Scan with camera:** Capture printed sheets or notices with layout-aware OCR and enhancement modes
+            - **Scan with camera:** Capture printed pages or notices with layout-aware OCR and enhancement modes
             - **Listen to text:** Use zero-data offline browser speech, chunked MP3 audio, or downloadable offline HTML readers
             - **Voice tools:** Transcribe spoken voice recordings and store them in your account history
-            - **Accessibility & AI ethics:** Document PWD user-testing observations and review privacy/consent guardrails
+            - **Accessibility & AI ethics:** Document user-testing observations and review consent and reliability guardrails
             """
         )
 
         st.divider()
-        if st.button("⚡ Quick Judge / Guest Demo Access", type="primary", use_container_width=True):
+        if st.button("Continue with Guest Demo", type="primary", use_container_width=True):
             st.session_state.authenticated = True
             st.session_state.username = "demo"
             st.session_state.full_name = "Demo User"
@@ -1680,7 +1715,7 @@ def render_auth_portal():
 
             with login_tab:
                 with st.form("login_form"):
-                    st.subheader("Portal Sign In")
+                    st.subheader("Sign in")
                     username = st.text_input("Username")
                     password = st.text_input("Password", type="password")
                     submitted = st.form_submit_button("Log in", type="primary", use_container_width=True)
@@ -1699,7 +1734,7 @@ def render_auth_portal():
 
             with register_tab:
                 with st.form("register_form"):
-                    st.subheader("Register Portal Account")
+                    st.subheader("Create an account")
                     full_name = st.text_input("Full name")
                     new_username = st.text_input("Choose a username")
                     new_password = st.text_input("Create a password (min 8 chars)", type="password")
@@ -1724,13 +1759,13 @@ def render_auth_portal():
 
 def render_sidebar():
     with st.sidebar:
-        st.title("👁️ NaijaSight")
-        st.caption(f"Portal Navigation · v{APP_VERSION}")
+        st.markdown("### 👁️ NaijaSight")
+        st.caption(f"Workspace · v{APP_VERSION}")
         st.divider()
 
-        st.write(f"Signed in as **{st.session_state.full_name}**")
+        st.markdown(f"**{html.escape(st.session_state.full_name or 'User')}**")
         if st.session_state.demo_mode:
-            st.info("Demonstration mode (unsaved session)")
+            st.caption("Guest demo session (history not saved)")
 
         pages = [
             "Home",
@@ -1741,13 +1776,13 @@ def render_sidebar():
             "Activity history",
             "Accessibility & AI ethics"
         ]
-        page = st.radio("Select Module", pages, key="nav_page")
+        page = st.radio("Modules", pages, key="nav_page")
 
         st.divider()
-        st.markdown("**Low-Vision Display**")
+        st.markdown("**Display & Editor**")
         st.selectbox(
-            "Contrast theme",
-            ["Standard", "High Contrast (Print Ledger)", "Low-Glare Night (Warm Charcoal)"],
+            "Theme",
+            ["Standard (Crisp Light)", "High Contrast (Pure White / Black)", "Low-Glare Slate"],
             key="vision_theme"
         )
         st.slider(
@@ -1773,14 +1808,14 @@ def render_portal_header(active_page):
 
     st.markdown(
         f"""
-        <div class="portal-banner">
+        <div class="ns-header-bar">
             <div>
-                <h2>👁️ NaijaSight Portal — {html.escape(active_page)}</h2>
-                <p>Welcome, <strong>{html.escape(st.session_state.full_name or '')}</strong> (@{html.escape(st.session_state.username or '')})</p>
+                <h2>{html.escape(active_page)}</h2>
+                <p>Signed in as <strong>{html.escape(st.session_state.full_name or '')}</strong> (@{html.escape(st.session_state.username or '')})</p>
             </div>
-            <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                <span class="portal-tag">Saved Records: {len(records)}</span>
-                <span class="portal-tag">Words Processed: {total_words:,}</span>
+            <div class="ns-chip-row">
+                <span class="ns-chip">Saved records: {len(records)}</span>
+                <span class="ns-chip">Words processed: {total_words:,}</span>
             </div>
         </div>
         """,
@@ -1797,8 +1832,8 @@ def go_to_page(page):
 
 
 def render_home():
-    st.subheader("Portal Category Hub")
-    st.caption("Select a category below to open its dedicated workspace.")
+    st.subheader("Workspace Modules")
+    st.caption("Choose a tool below to get started.")
 
     cards = [
         ("📄", "Read a document", "Extract text from PDF, Word, Excel, CSV, PowerPoint, EPUB, RTF, TXT, and images with key-fact triage.", "Read a document"),
@@ -1822,9 +1857,9 @@ def render_home():
                 )
 
     st.divider()
-    st.subheader("Quick Workflow")
-    st.write("1. Choose a category.  2. Upload, capture, or load a sample.  3. Check key facts & edit text.  4. Listen, export Excel/PDF/JSON, or open offline.")
-    st.info("For clearest recognition, keep text upright and in focus. Always verify important names, dates, dosages, and figures.")
+    st.subheader("How It Works")
+    st.write("1. Pick a module.  2. Upload a file, take a photo, or load a sample.  3. Review key facts and edit text.  4. Listen, export, or open offline.")
+    st.info("Keep printed text upright and well-lit for cleaner OCR, and verify critical amounts, dates, and dosages.")
 
 
 # ============================================================
@@ -1835,11 +1870,11 @@ def render_result_workspace():
     text = st.session_state.extracted_text
 
     if not text:
-        st.info("Your extracted text will appear here after processing.")
+        st.info("Extracted or transcribed text will appear here.")
         return
 
-    st.subheader("Extracted Text & Triage Workspace")
-    st.caption("OCR confidence is an estimate from detected text regions, not a guarantee that every word is correct.")
+    st.subheader("Extracted Text & Triage")
+    st.caption("OCR confidence estimates region clarity rather than guaranteeing every character.")
 
     elapsed_ms = st.session_state.get("last_process_ms")
     confidence = st.session_state.get("last_ocr_confidence")
@@ -1850,11 +1885,11 @@ def render_result_workspace():
             m2.metric("Processing time", f"{elapsed_ms} ms")
 
         if confidence < 60:
-            st.warning("The OCR engine is uncertain about some text. Please review carefully.")
+            st.warning("Some regions had low OCR confidence. Review carefully before relying on numbers or names.")
         elif confidence < 80:
-            st.info("Some parts of the text may need checking.")
+            st.info("Moderate OCR confidence. Double-check key details.")
         else:
-            st.success("The OCR engine recognised the text with high confidence.")
+            st.success("High OCR confidence across detected text regions.")
 
         uncertain = st.session_state.get("last_uncertain_words", [])
         if uncertain:
@@ -1862,18 +1897,15 @@ def render_result_workspace():
                 for item in uncertain:
                     st.write(f"**{item['text']}** — {item['confidence']}% confidence")
     elif elapsed_ms is not None:
-        st.caption(f"{len(text.split())} words · {len(text)} characters · Processed in {elapsed_ms} ms")
+        st.caption(f"{len(text.split())} words · {len(text)} characters · {elapsed_ms} ms")
     else:
-        st.caption(f"{len(text.split())} words · {len(text)} characters")
-
-    if confidence is not None:
         st.caption(f"{len(text.split())} words · {len(text)} characters")
 
     if st.session_state.get("editable_result") != text:
         st.session_state.editable_result = text
 
     edited_text = st.text_area(
-        "Review or edit the extracted text",
+        "Review or edit text",
         height=280,
         key="editable_result"
     )
@@ -1885,7 +1917,7 @@ def render_result_workspace():
 
     with col1:
         st.download_button(
-            "Download text (.TXT)",
+            "Download (.TXT)",
             data=edited_text,
             file_name="naijasight_extracted_text.txt",
             mime="text/plain",
@@ -1911,7 +1943,7 @@ def render_result_workspace():
             st.rerun()
 
     st.divider()
-    st.subheader("Listen to the text")
+    st.subheader("Listen to text")
     render_speech_controls(edited_text, "result")
 
 
@@ -1921,11 +1953,11 @@ def render_result_workspace():
 
 def render_document_reader():
     st.subheader("Read a Document or Image")
-    st.write("Upload a document or image file, or load a 1-click Nigerian sample bill/prescription for testing.")
+    st.write("Upload a file or load a sample bill or prescription to test triage and reading.")
 
-    with st.expander("🧪 1-Click Sample Nigerian Documents (For Instant Testing & Demo)"):
-        sample_choice = st.selectbox("Choose a sample document", list(SAMPLE_DOCUMENTS.keys()))
-        if st.button("Load Sample into Workspace", key="load_sample_doc"):
+    with st.expander("Sample documents (bills, prescriptions & notices)"):
+        sample_choice = st.selectbox("Choose a sample", list(SAMPLE_DOCUMENTS.keys()))
+        if st.button("Load sample", key="load_sample_doc"):
             t0 = time.perf_counter()
             sample_text = SAMPLE_DOCUMENTS[sample_choice]
             st.session_state.extracted_text = sample_text
@@ -1936,7 +1968,7 @@ def render_document_reader():
             st.session_state.last_uncertain_words = []
             st.session_state.last_process_ms = round((time.perf_counter() - t0) * 1000, 1)
             log_activity(f"{sample_choice}.txt", ".txt", sample_text)
-            st.success("Sample document loaded and logged.")
+            st.success("Sample loaded.")
             st.rerun()
 
     uploaded_file = st.file_uploader(
@@ -1966,18 +1998,18 @@ def render_document_reader():
 
         if selected_extension in image_extensions or selected_extension == ".pdf":
             quality_mode = st.radio(
-                "OCR image preparation",
+                "OCR preparation",
                 ["Standard", "Enhanced"],
                 horizontal=True
             )
 
-        st.caption(f"File size: {uploaded_file.size / (1024 * 1024):.2f} MB")
+        st.caption(f"Size: {uploaded_file.size / (1024 * 1024):.2f} MB")
 
         if st.button("Extract text", type="primary"):
             clear_current_result()
             try:
                 t0 = time.perf_counter()
-                with st.spinner("Processing your document..."):
+                with st.spinner("Extracting text..."):
                     extracted_text = process_uploaded_document(
                         uploaded_file,
                         image_mode=image_mode,
@@ -1992,7 +2024,7 @@ def render_document_reader():
                     st.session_state.editable_result = extracted_text
 
                     log_activity(uploaded_file.name, selected_extension, extracted_text)
-                    st.success("Text extraction completed and saved.")
+                    st.success("Extraction complete.")
                 else:
                     st.warning("No readable text was found in this file.")
 
@@ -2008,7 +2040,7 @@ def render_document_reader():
 
 def render_camera_scanner():
     st.subheader("Scan with Camera")
-    st.write("Take a clear picture of a printed page, textbook, utility bill, prescription, or notice.")
+    st.write("Capture a printed page, bill, prescription, or notice.")
 
     camera_mode = st.radio(
         "Reading scope",
@@ -2016,18 +2048,18 @@ def render_camera_scanner():
         horizontal=True
     )
     camera_quality = st.radio(
-        "OCR image preparation",
+        "OCR preparation",
         ["Standard", "Enhanced"],
         horizontal=True
     )
     camera_image = st.camera_input("Take a picture")
 
     if camera_image:
-        if st.button("Read this picture", type="primary"):
+        if st.button("Read picture", type="primary"):
             clear_current_result()
             try:
                 t0 = time.perf_counter()
-                with st.spinner("Reading camera image..."):
+                with st.spinner("Reading picture..."):
                     image = Image.open(camera_image)
                     extracted_text = image_to_text(
                         image,
@@ -2043,12 +2075,12 @@ def render_camera_scanner():
                     st.session_state.editable_result = extracted_text
 
                     log_activity("Camera scan", "camera", extracted_text)
-                    st.success("Text extracted and saved.")
+                    st.success("Text extracted.")
                 else:
-                    st.warning("No text was detected. Try taking another picture.")
+                    st.warning("No text detected. Try a clearer photo.")
 
             except Exception as error:
-                st.error(f"Could not process the picture: {error}")
+                st.error(f"Could not process picture: {error}")
 
     render_result_workspace()
 
@@ -2059,9 +2091,9 @@ def render_camera_scanner():
 
 def render_listen_page():
     st.subheader("Listen to Text")
-    st.write("Paste any text, load a sample, or use extracted text to generate speech in manageable parts.")
+    st.write("Paste text, load a sample, or use your current workspace text.")
 
-    if st.button("Load Sample Bill for Audio Test", key="listen_sample_btn"):
+    if st.button("Load sample bill", key="listen_sample_btn"):
         st.session_state["standalone_listen_text"] = SAMPLE_DOCUMENTS["⚡ EKEDC Electricity Utility Bill"]
         st.rerun()
 
@@ -2082,26 +2114,26 @@ def render_listen_page():
 # ============================================================
 
 def render_voice_tools():
-    st.subheader("Voice Transcription Tools")
-    st.write("Record a short spoken message and convert it into text.")
+    st.subheader("Voice Transcription")
+    st.write("Record a short spoken note and convert it into editable text.")
 
     if not SPEECH_RECOGNITION_AVAILABLE:
         st.error("The speech recognition package is not installed.")
         return
 
     st.warning(
-        "Voice recognition sends your recording to Google's speech recognition service. "
-        "Avoid recording sensitive or private information."
+        "Voice transcription sends audio to Google's speech service. "
+        "Do not record sensitive or private details."
     )
     consent = st.checkbox("I agree to send my recording to Google for transcription.")
-    audio_file = st.audio_input("Record your voice")
+    audio_file = st.audio_input("Record voice")
 
     if audio_file:
         st.audio(audio_file)
-        if st.button("Convert speech to text", disabled=not consent, type="primary"):
+        if st.button("Transcribe recording", disabled=not consent, type="primary"):
             try:
                 t0 = time.perf_counter()
-                with st.spinner("Transcribing recording..."):
+                with st.spinner("Transcribing..."):
                     transcript = transcribe_audio(audio_file)
                 st.session_state.last_process_ms = round((time.perf_counter() - t0) * 1000, 1)
 
@@ -2111,7 +2143,7 @@ def render_voice_tools():
                 st.session_state.editable_result = transcript
 
                 log_activity("Voice recording", "audio", transcript)
-                st.success("Transcription completed and saved.")
+                st.success("Transcription complete.")
             except Exception as error:
                 st.error(f"Could not transcribe recording: {error}")
 
@@ -2123,15 +2155,15 @@ def render_voice_tools():
 # ============================================================
 
 def render_history():
-    st.subheader("Activity History, Stored Records & Exports")
+    st.subheader("Activity History & Exports")
 
     if st.session_state.demo_mode:
-        st.info("Sign in with a registered account to store and retain history across sessions.")
+        st.info("Sign in with a registered account to store and manage history across sessions.")
         return
 
     records = get_activity_records()
     if not records:
-        st.info("You have no saved activity records yet.")
+        st.info("No saved activity records yet.")
         return
 
     total_words = sum(r["word_count"] for r in records)
@@ -2140,32 +2172,32 @@ def render_history():
     k1, k2, k3 = st.columns(3)
     with k1:
         st.markdown(
-            f'<div class="kpi-card"><div class="kpi-label">Saved Extractions</div><div class="kpi-value">{len(records)}</div></div>',
+            f'<div class="ns-kpi-card"><div class="ns-kpi-label">Saved extractions</div><div class="ns-kpi-value">{len(records)}</div></div>',
             unsafe_allow_html=True
         )
     with k2:
         st.markdown(
-            f'<div class="kpi-card"><div class="kpi-label">Total Words</div><div class="kpi-value">{total_words:,}</div></div>',
+            f'<div class="ns-kpi-card"><div class="ns-kpi-label">Total words</div><div class="ns-kpi-value">{total_words:,}</div></div>',
             unsafe_allow_html=True
         )
     with k3:
         st.markdown(
-            f'<div class="kpi-card"><div class="kpi-label">Total Characters</div><div class="kpi-value">{total_chars:,}</div></div>',
+            f'<div class="ns-kpi-card"><div class="ns-kpi-label">Total characters</div><div class="ns-kpi-value">{total_chars:,}</div></div>',
             unsafe_allow_html=True
         )
 
-    st.markdown("#### Search & Filter Retained Records")
+    st.markdown("#### Search & Filter")
     f_col1, f_col2 = st.columns([2, 1])
     with f_col1:
         search_query = st.text_input(
-            "Search by filename or extracted text",
-            placeholder="e.g., bill, prescription, camera, chapter 1..."
+            "Search filename or text",
+            placeholder="e.g., bill, prescription, camera..."
         ).strip().lower()
 
     available_types = sorted({(r["file_type"] or "unknown") for r in records})
     with f_col2:
         type_filter = st.selectbox(
-            "Filter by type",
+            "File type",
             options=["All Types"] + available_types
         )
 
@@ -2177,7 +2209,7 @@ def render_history():
         if matches_type and matches_query:
             filtered_records.append(r)
 
-    st.caption(f"Showing {len(filtered_records)} of {len(records)} saved record(s).")
+    st.caption(f"Showing {len(filtered_records)} of {len(records)} record(s).")
 
     if filtered_records:
         filtered_df = pd.DataFrame([
@@ -2197,7 +2229,7 @@ def render_history():
         exp_col1, exp_col2, exp_col3 = st.columns(3)
         with exp_col1:
             st.download_button(
-                "📊 Export Excel (.XLSX)",
+                "Export Excel (.XLSX)",
                 data=build_excel_export_bytes(filtered_records),
                 file_name=f"naijasight_{st.session_state.username}_records.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -2206,7 +2238,7 @@ def render_history():
             )
         with exp_col2:
             st.download_button(
-                "📄 Export Report (.PDF)",
+                "Export Report (.PDF)",
                 data=build_pdf_report_bytes(filtered_records),
                 file_name=f"naijasight_{st.session_state.username}_report.pdf",
                 mime="application/pdf",
@@ -2214,33 +2246,33 @@ def render_history():
             )
         with exp_col3:
             st.download_button(
-                "🧾 Audit Snapshot (.JSON)",
+                "Audit Snapshot (.JSON)",
                 data=build_audit_json_bytes(filtered_records),
                 file_name=f"naijasight_{st.session_state.username}_audit.json",
                 mime="application/json",
                 use_container_width=True
             )
     else:
-        st.warning("No records match your current search or filter.")
+        st.warning("No records match your search or filter.")
 
     st.divider()
-    st.subheader("Reload or Manage a Saved Record")
+    st.subheader("Manage Saved Record")
 
     pool_for_selection = filtered_records if filtered_records else records
     record_map = {
         f"#{r['id']} — {r['filename']} ({r['word_count']} words, {r['created_at']})": r
         for r in pool_for_selection
     }
-    selected_label = st.selectbox("Choose a saved record", list(record_map.keys()))
+    selected_label = st.selectbox("Saved record", list(record_map.keys()))
     chosen_record = record_map[selected_label]
 
     if chosen_record.get("extracted_text"):
-        with st.expander("Preview retained text"):
+        with st.expander("Preview text"):
             st.write(chosen_record["extracted_text"])
 
     col_reload, col_del_one = st.columns(2)
     with col_reload:
-        if st.button("📂 Load Text into Workspace", use_container_width=True):
+        if st.button("Load into workspace", use_container_width=True):
             st.session_state.extracted_text = chosen_record.get("extracted_text", "")
             st.session_state.editable_result = chosen_record.get("extracted_text", "")
             st.session_state.current_filename = chosen_record["filename"]
@@ -2249,18 +2281,18 @@ def render_history():
             st.rerun()
 
     with col_del_one:
-        if st.button("🗑️ Delete This Record", use_container_width=True):
+        if st.button("Delete record", use_container_width=True):
             delete_activity_item(chosen_record["id"])
             st.success("Record deleted.")
             st.rerun()
 
     st.divider()
-    st.subheader("Clear All Activity History")
-    st.warning("This permanently deletes all activity records stored under your account.")
-    confirm_delete = st.checkbox("I understand that this cannot be undone.")
-    if st.button("Delete all my history", disabled=not confirm_delete):
+    st.subheader("Clear Activity History")
+    st.warning("This permanently deletes all activity records under your account.")
+    confirm_delete = st.checkbox("I understand this cannot be undone.")
+    if st.button("Delete all history", disabled=not confirm_delete):
         delete_activity()
-        st.success("Your activity history has been deleted.")
+        st.success("Activity history deleted.")
         st.rerun()
 
 
@@ -2269,44 +2301,44 @@ def render_history():
 # ============================================================
 
 def render_accessibility_and_ethics():
-    st.subheader("Accessibility Testing Log & Responsible AI Note")
+    st.subheader("Accessibility & AI Ethics")
     st.write(
-        "Document real user-testing observations (especially with blind and low-vision testers), "
-        "track product fixes, and maintain transparent privacy and reliability guardrails."
+        "Track usability observations from real testing sessions, document fixes, "
+        "and maintain clear consent and accuracy guardrails."
     )
 
     st.markdown(
         """
-        - **Informed Consent & Data Minimization:** Speech synthesis and voice transcription only run after explicit user checkbox consent.
-        - **Low-Vision & Screen-Reader Support:** High-contrast and low-glare themes, adjustable text sizes, keyboard focus outlines, zero-data offline browser speech, and standalone offline HTML readers.
-        - **Accuracy & Safety Guardrails:** OCR confidence estimates and uncertain-word flags highlight potential errors on financial amounts, dates, and medication dosages.
+        - **Explicit Consent:** Cloud speech and voice transcription require an explicit user checkbox before sending data.
+        - **Low-Vision & Offline Support:** Adjustable editor font size, contrast themes, offline browser speech, and standalone offline HTML readers.
+        - **Reliability Guardrails:** OCR confidence scores and uncertain-word flags highlight areas that deserve manual verification.
         """
     )
 
     st.divider()
-    st.markdown("#### Log an Accessibility Testing Observation")
+    st.markdown("#### Log a Testing Observation")
     with st.form("a11y_feedback_form"):
         tester_group = st.text_input(
-            "Tester Profile / Context",
-            placeholder="e.g., Low-vision student on mobile / Blind tester with screen reader"
+            "Tester profile or context",
+            placeholder="e.g., Low-vision student on mobile / Screen-reader tester"
         )
-        severity = st.selectbox("Priority / Severity", ["High", "Medium", "Low"])
-        issue_found = st.text_area("What broke, slowed down, or confused the tester?", height=90)
-        fix_applied = st.text_area("What change did the team make in response?", height=90)
-        submitted = st.form_submit_button("Save Testing Note to SQLite", type="primary")
+        severity = st.selectbox("Severity", ["High", "Medium", "Low"])
+        issue_found = st.text_area("Issue observed", height=90)
+        fix_applied = st.text_area("Fix or improvement made", height=90)
+        submitted = st.form_submit_button("Save observation", type="primary")
 
         if submitted:
             if not tester_group.strip() or not issue_found.strip() or not fix_applied.strip():
-                st.warning("Please complete tester profile, issue observed, and fix implemented.")
+                st.warning("Please complete tester profile, issue observed, and fix made.")
             else:
                 log_accessibility_feedback(tester_group, issue_found, fix_applied, severity)
-                st.success("Accessibility testing note saved to database (and included in Excel/JSON exports).")
+                st.success("Observation saved.")
                 st.rerun()
 
     feedback_df = get_accessibility_feedback_df()
-    st.markdown("#### Recorded Accessibility Testing Notes")
+    st.markdown("#### Logged Observations")
     if feedback_df.empty:
-        st.info("No testing notes logged yet. Add your first observation above.")
+        st.info("No testing observations logged yet.")
     else:
         st.dataframe(feedback_df, use_container_width=True, hide_index=True)
 
@@ -2318,7 +2350,7 @@ def render_accessibility_and_ethics():
 def render_logged_in_portal():
     page = render_sidebar()
     apply_portal_styles(
-        vision_theme=st.session_state.get("vision_theme", "Standard"),
+        vision_theme=st.session_state.get("vision_theme", "Standard (Crisp Light)"),
         reader_font_px=st.session_state.get("reader_font_px", 18)
     )
     render_portal_header(page)
@@ -2340,8 +2372,7 @@ def render_logged_in_portal():
 
     st.divider()
     st.caption(
-        "NaijaSight Portal | Assistive reading, triage & voice suite. "
-        "Always verify important names, dates, dosages, and figures."
+        "NaijaSight · Verify important names, dates, dosages, and figures."
     )
 
 
@@ -2351,7 +2382,7 @@ def render_logged_in_portal():
 
 if not st.session_state.authenticated:
     apply_portal_styles(
-        vision_theme=st.session_state.get("vision_theme", "Standard"),
+        vision_theme=st.session_state.get("vision_theme", "Standard (Crisp Light)"),
         reader_font_px=st.session_state.get("reader_font_px", 18)
     )
     render_auth_portal()
