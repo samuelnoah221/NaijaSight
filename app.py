@@ -36,14 +36,14 @@ except ImportError:
 # ============================================================
 
 st.set_page_config(
-    page_title="NaijaSight Portal | Assistive Document, Triage & Voice Suite",
+    page_title="NaijaSight Portal | Assistive Document, Naira & Voice Suite",
     page_icon="👁️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 APP_NAME = "NaijaSight"
-APP_VERSION = "2.4-DSN"
+APP_VERSION = "2.6-DSN"
 BASE_DIR = Path(__file__).parent
 DB_PATH = BASE_DIR / "naijasight_portal.db"
 
@@ -94,7 +94,6 @@ def apply_portal_styles(vision_theme: str = "Standard (Crisp Light)", reader_fon
         secondary_btn_bg = "#232834"
         secondary_btn_text = "#F3F4F6"
     else:
-        # Clean YouTube-inspired neutral product surface with restrained cobalt accent
         bg_color = "#F9FAFB"
         sidebar_bg = "#FFFFFF"
         card_bg = "#FFFFFF"
@@ -132,7 +131,6 @@ def apply_portal_styles(vision_theme: str = "Standard (Crisp Light)", reader_fon
             --ns-sec-btn-text: {secondary_btn_text};
         }}
 
-        /* Main app surface */
         [data-testid="stAppViewContainer"] {{
             background-color: var(--ns-bg) !important;
             color: var(--ns-text) !important;
@@ -142,7 +140,6 @@ def apply_portal_styles(vision_theme: str = "Standard (Crisp Light)", reader_fon
             background-color: transparent !important;
         }}
 
-        /* Explicit sidebar surface so it never falls back to black */
         [data-testid="stSidebar"] {{
             background-color: var(--ns-sidebar) !important;
             color: var(--ns-text) !important;
@@ -171,7 +168,6 @@ def apply_portal_styles(vision_theme: str = "Standard (Crisp Light)", reader_fon
             padding-bottom: 3.5rem;
         }}
 
-        /* Clean top workspace header bar */
         .ns-header-bar {{
             background: var(--ns-card);
             border: 1px solid var(--ns-border);
@@ -215,7 +211,6 @@ def apply_portal_styles(vision_theme: str = "Standard (Crisp Light)", reader_fon
             font-weight: 600;
         }}
 
-        /* Metric cards scoped to KPI summary */
         .ns-kpi-card {{
             background: var(--ns-card);
             border: 1px solid var(--ns-border);
@@ -239,7 +234,6 @@ def apply_portal_styles(vision_theme: str = "Standard (Crisp Light)", reader_fon
             margin-top: 0.2rem;
         }}
 
-        /* Triage summary card */
         .ns-triage-card {{
             background: var(--ns-card);
             border: 1px solid var(--ns-border);
@@ -250,7 +244,6 @@ def apply_portal_styles(vision_theme: str = "Standard (Crisp Light)", reader_fon
             color: var(--ns-text);
         }}
 
-        /* Buttons: crisp cobalt primary, clean neutral secondary */
         div.stButton > button[kind="primary"] {{
             background-color: var(--ns-accent) !important;
             border: 1px solid var(--ns-accent) !important;
@@ -276,7 +269,6 @@ def apply_portal_styles(vision_theme: str = "Standard (Crisp Light)", reader_fon
             font-weight: 600;
         }}
 
-        /* Scoped text area styling: ONLY text areas get reader_font_px */
         [data-testid="stTextArea"] textarea {{
             font-size: {reader_font_px}px !important;
             line-height: 1.65 !important;
@@ -286,7 +278,8 @@ def apply_portal_styles(vision_theme: str = "Standard (Crisp Light)", reader_fon
             border-radius: 10px !important;
         }}
 
-        [data-testid="stTextInput"] input {{
+        [data-testid="stTextInput"] input,
+        [data-testid="stNumberInput"] input {{
             background-color: var(--ns-input-bg) !important;
             color: var(--ns-text) !important;
             border: 1px solid var(--ns-border) !important;
@@ -553,26 +546,6 @@ def get_activity_records():
     return [dict(row) for row in rows]
 
 
-def get_activity():
-    records = get_activity_records()
-    if not records:
-        return pd.DataFrame()
-
-    summary_rows = [
-        {
-            "ID": r["id"],
-            "Filename": r["filename"],
-            "Type": r["file_type"],
-            "Words": r["word_count"],
-            "Characters": r["character_count"],
-            "Status": r["status"],
-            "Timestamp": r["created_at"],
-        }
-        for r in records
-    ]
-    return pd.DataFrame(summary_rows)
-
-
 def delete_activity_item(record_id):
     if st.session_state.get("demo_mode"):
         return
@@ -777,10 +750,15 @@ defaults = {
     "last_ocr_confidence": None,
     "last_uncertain_words": [],
     "last_process_ms": None,
+    "last_image_color_hint": None,
 
     "editable_result": "",
     "vision_theme": "Standard (Crisp Light)",
     "reader_font_px": 18,
+    "auto_speak_triage": False,
+    "target_payment_ngn": 0.0,
+    "cash_basket_notes": [],
+    "last_voice_amount_transcript": "",
 }
 
 for key, value in defaults.items():
@@ -795,6 +773,7 @@ def clear_current_result():
     st.session_state.last_ocr_confidence = None
     st.session_state.last_uncertain_words = []
     st.session_state.last_process_ms = None
+    st.session_state.last_image_color_hint = None
     st.session_state.editable_result = ""
 
 
@@ -804,6 +783,7 @@ def logout():
     st.session_state.full_name = None
     st.session_state.demo_mode = False
     st.session_state.nav_page = "Home"
+    st.session_state.cash_basket_notes = []
     clear_current_result()
     st.rerun()
 
@@ -830,7 +810,7 @@ def check_file_size(uploaded_file):
 
 
 # ============================================================
-# 10. IMAGE ENHANCEMENT & LAYOUT GROUPING
+# 10. IMAGE ENHANCEMENT, COLOR HINT & LAYOUT GROUPING
 # ============================================================
 
 def prepare_image(image):
@@ -838,6 +818,23 @@ def prepare_image(image):
     if image.width * image.height > MAX_IMAGE_PIXELS:
         raise ValueError("Image is too large to process safely.")
     return image.convert("RGB")
+
+
+def estimate_naira_color_hint(image: Image.Image) -> str | None:
+    thumb = image.resize((64, 64))
+    arr = np.asarray(thumb, dtype=np.float32)
+    center = arr[16:48, 16:48]
+    r, g, b = center[:, :, 0].mean(), center[:, :, 1].mean(), center[:, :, 2].mean()
+    sat = max(r, g, b) - min(r, g, b)
+    if sat < 14:
+        return None
+    if b > r + 18 and b > g + 10:
+        return "Blue/Cyan tint (consistent with ₦1,000 or ₦100 note)"
+    if r > g + 22 and r > b + 22:
+        return "Red/Terracotta tint (consistent with ₦500 or ₦10 note)"
+    if g > r + 15 and g > b + 12:
+        return "Green tint (consistent with ₦200 or ₦20 note)"
+    return None
 
 
 def crop_main_document(image):
@@ -923,6 +920,7 @@ def group_ocr_results(results):
 
 def recognize_image(image, mode="Read Entire Image", quality_mode="Standard"):
     prepared = prepare_image(image)
+    color_hint = estimate_naira_color_hint(prepared)
 
     if mode == "Read Main Document":
         prepared = crop_main_document(prepared)
@@ -947,7 +945,7 @@ def recognize_image(image, mode="Read Entire Image", quality_mode="Standard"):
 
     lines, items = group_ocr_results(results)
     if not items:
-        return {"text": "", "confidence": 0, "uncertain_words": []}
+        return {"text": "", "confidence": 0, "uncertain_words": [], "color_hint": color_hint}
 
     confidences = [item["confidence"] for item in items]
     uncertain_words = [
@@ -958,6 +956,7 @@ def recognize_image(image, mode="Read Entire Image", quality_mode="Standard"):
         "text": "\n".join(lines),
         "confidence": round(sum(confidences) / len(confidences) * 100, 1),
         "uncertain_words": uncertain_words,
+        "color_hint": color_hint,
     }
 
 
@@ -965,6 +964,7 @@ def image_to_text(image, mode="Read Entire Image", quality_mode="Standard"):
     result = recognize_image(image, mode=mode, quality_mode=quality_mode)
     st.session_state.last_ocr_confidence = result["confidence"]
     st.session_state.last_uncertain_words = result["uncertain_words"]
+    st.session_state.last_image_color_hint = result.get("color_hint")
     return result["text"]
 
 
@@ -1102,10 +1102,29 @@ def process_epub(uploaded_file):
 
 
 # ============================================================
-# 21. DOCUMENT PROCESSING ROUTER & SMART TRIAGE ENGINE
+# 21. DOCUMENT ROUTER, NAIRA CASH BASKET, VOICE AMOUNT & TRIAGE
 # ============================================================
 
 SAMPLE_DOCUMENTS = {
+    "💵 Single ₦1,000 Note (Snap & Add to Basket)": (
+        "CENTRAL BANK OF NIGERIA\n"
+        "ONE THOUSAND NAIRA - 1000\n"
+        "Legal tender for payment of any amount."
+    ),
+    "💵 Single ₦500 Note (Snap & Add to Basket)": (
+        "CENTRAL BANK OF NIGERIA\n"
+        "FIVE HUNDRED NAIRA - 500\n"
+        "Legal tender for payment of any amount."
+    ),
+    "📱 Mobile Transfer / POS Screen Receipt": (
+        "OPay Digital Services Limited - Transfer Receipt\n"
+        "Transaction Status: Successful\n"
+        "Amount: NGN 3,500.00\n"
+        "Recipient: Mama Nkechi Provision Store\n"
+        "Bank: Moniepoint MFB | Account: 8012349876\n"
+        "Session ID: 09040526112201449281\n"
+        "Date: 22/11/2026 14:12"
+    ),
     "⚡ EKEDC Electricity Utility Bill": (
         "EKO ELECTRICITY DISTRIBUTION COMPANY (EKEDC)\n"
         "Account Number: 0412894510-01 | Meter No: 45091827364\n"
@@ -1125,16 +1144,64 @@ SAMPLE_DOCUMENTS = {
         "CAUTION: Complete the full antibiotic course. Do not exceed 4,000mg Paracetamol in 24 hours. "
         "Keep out of reach of children. Contact +234-800-555-0199 if rash or dizziness occurs."
     ),
-    "🏦 Bank Transfer & POS Dispute Notice": (
-        "ACCESS BANK NIGERIA - CUSTOMER TRANSACTION ADVICE\n"
-        "Reference ID: TXN-994810234 | Date: 20/11/2026\n"
-        "Transaction Type: POS / NIP Instant Transfer Reversal Claim\n"
-        "Disputed Amount: NGN 45,000.00 | Merchant Terminal: 2044LA09\n"
-        "Resolution Deadline: 25/11/2026\n"
-        "IMPORTANT NOTICE: Never share your card PIN, BVN, or OTP with anyone. "
-        "Your claim will be auto-resolved within 48 working hours."
-    ),
 }
+
+
+def parse_spoken_amount_ngn(transcript: str) -> float | None:
+    """Parse spoken or numeric Naira payment targets like '3500' or 'three thousand five hundred'."""
+    if not transcript:
+        return None
+    s = transcript.lower().replace(",", " ").replace("₦", " ").replace("ngn", " ")
+
+    # First check explicit numeric tokens
+    num_matches = re.findall(r"\b\d+(?:\.\d{1,2})?\b", s)
+    if num_matches:
+        try:
+            val = float(num_matches[0])
+            if val > 0:
+                return val
+        except ValueError:
+            pass
+
+    # Word-based number parser for common spoken payment amounts
+    units = {
+        "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+        "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+        "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
+        "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19,
+    }
+    tens = {
+        "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50,
+        "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90,
+    }
+    tokens = re.findall(r"[a-z]+", s)
+    total = 0
+    current = 0
+    found_any = False
+
+    for tok in tokens:
+        if tok in {"naira", "kobo", "and"}:
+            continue
+        if tok in units:
+            current += units[tok]
+            found_any = True
+        elif tok in tens:
+            current += tens[tok]
+            found_any = True
+        elif tok == "hundred":
+            current = (current if current > 0 else 1) * 100
+            found_any = True
+        elif tok == "thousand":
+            total += (current if current > 0 else 1) * 1000
+            current = 0
+            found_any = True
+        elif tok == "million":
+            total += (current if current > 0 else 1) * 1_000_000
+            current = 0
+            found_any = True
+
+    total += current
+    return float(total) if (found_any and total > 0) else None
 
 
 def process_uploaded_document(
@@ -1173,7 +1240,126 @@ def process_uploaded_document(
     return processor(uploaded_file)
 
 
-def analyze_document_triage(text: str) -> dict:
+def detect_naira_banknotes(text: str) -> dict:
+    """Detect Naira banknote denominations and CBN markers from camera/document OCR text."""
+    clean = (text or "").strip()
+    if not clean:
+        return {"notes": [], "total_ngn": 0, "cbn_verified": False}
+
+    low = clean.lower()
+    cbn_verified = any(
+        phrase in low for phrase in ("central bank of nigeria", "legal tender", "naira")
+    )
+
+    denom_patterns = [
+        (1000, r"(?:one\s+thousand\s+naira|(?:₦|ngn)?\s?\b1,?000\b)"),
+        (500, r"(?:five\s+hundred\s+naira|(?:₦|ngn)?\s?\b500\b)"),
+        (200, r"(?:two\s+hundred\s+naira|(?:₦|ngn)?\s?\b200\b)"),
+        (100, r"(?:one\s+hundred\s+naira|(?:₦|ngn)?\s?\b100\b)"),
+        (50, r"(?:fifty\s+naira|(?:₦|ngn)?\s?\b50\b)"),
+        (20, r"(?:twenty\s+naira|(?:₦|ngn)?\s?\b20\b)"),
+        (10, r"(?:ten\s+naira|(?:₦|ngn)?\s?\b10\b)"),
+        (5, r"(?:five\s+naira|(?:₦|ngn)?\s?\b5\b)"),
+    ]
+
+    is_currency_context = cbn_verified or bool(re.search(r"(?:₦|ngn|naira)", low))
+    if not is_currency_context:
+        return {"notes": [], "total_ngn": 0, "cbn_verified": False}
+
+    detected_notes = []
+    for line in clean.splitlines():
+        line_low = line.lower()
+        for value, pat in denom_patterns:
+            if re.search(pat, line_low):
+                detected_notes.append(value)
+                break
+
+    total_ngn = sum(detected_notes)
+    return {
+        "notes": detected_notes,
+        "total_ngn": total_ngn,
+        "cbn_verified": cbn_verified,
+    }
+
+
+def analyze_screen_or_receipt(text: str) -> dict:
+    """Detect mobile banking screen, USSD prompt, or POS receipt fields."""
+    clean = (text or "").strip()
+    if not clean:
+        return {}
+
+    low = clean.lower()
+    screen_markers = (
+        "successful", "transaction", "transfer", "recipient", "beneficiary",
+        "session id", "opay", "palmpay", "moniepoint", "gtbank", "access bank",
+        "firstbank", "zenith", "uba", "kuda", "pos", "ussd", "debited", "credited"
+    )
+    if not any(m in low for m in screen_markers):
+        return {}
+
+    status = "Unknown"
+    if "successful" in low or "approved" in low or "completed" in low:
+        status = "Successful"
+    elif "failed" in low or "declined" in low:
+        status = "Failed / Declined"
+    elif "pending" in low or "processing" in low:
+        status = "Pending"
+
+    recipient_match = re.search(
+        r"(?:Recipient|Beneficiary|Merchant|Account Name|To)\s*[:\-]\s*([^\n|]+)",
+        clean,
+        flags=re.IGNORECASE
+    )
+    bank_match = re.search(
+        r"(?:Bank|Institution)\s*[:\-]\s*([^\n|]+)",
+        clean,
+        flags=re.IGNORECASE
+    )
+    amount_match = re.search(
+        r"(?:Amount|Total|Paid|Sent|Received)?\s*[:\-]?\s*((?:NGN|₦)\s?\d[\d,]*(?:\.\d{1,2})?)",
+        clean,
+        flags=re.IGNORECASE
+    )
+
+    recipient = recipient_match.group(1).strip() if recipient_match else None
+    bank = bank_match.group(1).strip() if bank_match else None
+    amount = amount_match.group(1).strip() if amount_match else None
+
+    summary_bits = [f"Screen receipt status: {status}."]
+    if amount:
+        summary_bits.append(f"Amount: {amount}.")
+    if recipient:
+        summary_bits.append(f"Recipient: {recipient}.")
+    if bank:
+        summary_bits.append(f"Bank: {bank}.")
+
+    return {
+        "status": status,
+        "amount": amount,
+        "recipient": recipient,
+        "bank": bank,
+        "spoken_receipt": " ".join(summary_bits),
+    }
+
+
+def format_payment_comparison(detected_numeric: float, target_payment_ngn: float, label_prefix: str = "Detected") -> str | None:
+    if not target_payment_ngn or target_payment_ngn <= 0 or detected_numeric <= 0:
+        return None
+    diff = round(detected_numeric - float(target_payment_ngn), 2)
+    if abs(diff) < 0.01:
+        return f"Exact payment match: ₦{detected_numeric:,.2f} matches target ₦{target_payment_ngn:,.2f}."
+    if diff > 0:
+        return (
+            f"Over target by ₦{diff:,.2f} ({label_prefix} ₦{detected_numeric:,.2f} vs Target ₦{target_payment_ngn:,.2f}). "
+            f"Expected change: ₦{diff:,.2f}."
+        )
+    return (
+        f"Short by ₦{abs(diff):,.2f} ({label_prefix} ₦{detected_numeric:,.2f} vs Target ₦{target_payment_ngn:,.2f}). "
+        f"Add ₦{abs(diff):,.2f}."
+    )
+
+
+def analyze_document_triage(text: str, target_payment_ngn: float = 0.0, basket_total_ngn: float = 0.0) -> dict:
     clean = (text or "").strip()
     if not clean:
         return {}
@@ -1198,14 +1384,14 @@ def analyze_document_triage(text: str) -> dict:
     )
 
     identifiers = re.findall(
-        r"(?:Account|Meter|Ref(?:erence)?|ID|Policy|Phone|Tel)[\s#:No.]*[A-Z0-9+-]{6,}",
+        r"(?:Account|Meter|Ref(?:erence)?|Session|ID|Policy|Phone|Tel)[\s#:No.]*[A-Z0-9+-]{6,}",
         clean,
         flags=re.IGNORECASE
     )
 
     warning_keywords = (
         "warning", "caution", "danger", "due date", "deadline", "disconnection",
-        "do not", "never", "important", "penalty", "expire", "overdose", "emergency"
+        "do not", "never", "important", "penalty", "expire", "overdose", "emergency", "failed", "declined"
     )
     alerts = []
     for line in clean.splitlines():
@@ -1229,16 +1415,47 @@ def analyze_document_triage(text: str) -> dict:
     identifiers = dedup(identifiers)[:6]
     alerts = dedup(alerts)[:5]
 
-    spoken_parts = ["Key facts summary."]
-    if amounts:
-        spoken_parts.append(f"Amounts detected: {', '.join(amounts[:4])}.")
-    if dates:
-        spoken_parts.append(f"Important dates: {', '.join(dates[:3])}.")
-    if dosages:
-        spoken_parts.append(f"Dosage instructions: {'; '.join(dosages[:2])}.")
+    naira_info = detect_naira_banknotes(clean)
+    receipt_info = analyze_screen_or_receipt(clean)
+
+    detected_numeric = float(naira_info["total_ngn"])
+    if detected_numeric == 0 and amounts:
+        num_match = re.search(r"(\d[\d,]*(?:\.\d{1,2})?)", amounts[0])
+        if num_match:
+            try:
+                detected_numeric = float(num_match.group(1).replace(",", ""))
+            except ValueError:
+                detected_numeric = 0.0
+
+    effective_cash_total = float(basket_total_ngn) if basket_total_ngn > 0 else detected_numeric
+    payment_status_line = format_payment_comparison(
+        effective_cash_total,
+        target_payment_ngn,
+        label_prefix="Running cash total" if basket_total_ngn > 0 else "Detected"
+    )
+
+    spoken_parts = []
+    if receipt_info:
+        spoken_parts.append(receipt_info["spoken_receipt"])
+    elif naira_info["notes"]:
+        notes_str = ", ".join(f"{n} Naira" for n in naira_info["notes"])
+        spoken_parts.append(f"This scan shows {notes_str}, subtotal {naira_info['total_ngn']} Naira.")
+        if basket_total_ngn > 0:
+            spoken_parts.append(f"Running cash basket total is {basket_total_ngn:,.0f} Naira.")
+    else:
+        spoken_parts.append("Key facts summary.")
+        if amounts:
+            spoken_parts.append(f"Amounts detected: {', '.join(amounts[:4])}.")
+        if dates:
+            spoken_parts.append(f"Important dates: {', '.join(dates[:3])}.")
+        if dosages:
+            spoken_parts.append(f"Dosage instructions: {'; '.join(dosages[:2])}.")
+
+    if payment_status_line:
+        spoken_parts.append(payment_status_line)
     if alerts:
-        spoken_parts.append(f"Critical alert: {alerts[0]}")
-    if len(spoken_parts) == 1:
+        spoken_parts.append(f"Alert: {alerts[0]}")
+    if len(spoken_parts) == 1 and spoken_parts[0] == "Key facts summary.":
         first_sentences = " ".join(re.split(r"(?<=[.!?])\s+", clean)[:2])
         spoken_parts.append(first_sentences[:350])
 
@@ -1248,15 +1465,121 @@ def analyze_document_triage(text: str) -> dict:
         "dosages": dosages,
         "identifiers": identifiers,
         "alerts": alerts,
+        "naira_info": naira_info,
+        "receipt_info": receipt_info,
+        "payment_status_line": payment_status_line,
         "spoken_brief": " ".join(spoken_parts),
     }
 
 
-def render_instant_browser_tts(text: str, button_label: str = "🔊 Read Aloud Offline (Zero Data)"):
-    """Client-side Web Speech API fallback so blind users can listen offline with zero latency."""
+def render_payment_target_and_basket(text: str, key_prefix: str):
+    """Render voice/manual payment target controls + multi-note running cash basket."""
+    st.markdown("#### 🧮 Payment Target & Running Cash Basket")
+
+    # Voice input to set amount to pay
+    with st.expander("🎙️ Say Amount to Pay by Voice"):
+        if not SPEECH_RECOGNITION_AVAILABLE:
+            st.caption("Voice recognition package unavailable; use the number field below.")
+        else:
+            st.caption("Speak your payment target (e.g., 'three thousand five hundred' or '2000').")
+            voice_consent = st.checkbox(
+                "I agree to send this short voice clip to Google for number transcription.",
+                key=f"{key_prefix}_amt_voice_consent"
+            )
+            amt_audio = st.audio_input("Record payment amount", key=f"{key_prefix}_amt_audio")
+            if amt_audio and st.button(
+                "Set amount from voice",
+                key=f"{key_prefix}_set_amt_voice_btn",
+                disabled=not voice_consent
+            ):
+                try:
+                    spoken = transcribe_audio(amt_audio)
+                    st.session_state.last_voice_amount_transcript = spoken
+                    parsed_amt = parse_spoken_amount_ngn(spoken)
+                    if parsed_amt:
+                        st.session_state.target_payment_ngn = parsed_amt
+                        st.success(f"Heard: '{spoken}' → Target set to ₦{parsed_amt:,.2f}")
+                        st.rerun()
+                    else:
+                        st.warning(f"Heard: '{spoken}', but could not read a clear Naira amount.")
+                except Exception as err:
+                    st.error(f"Voice amount error: {err}")
+
+    target_amt = st.number_input(
+        "Amount you want to pay (₦ NGN)",
+        min_value=0.0,
+        step=50.0,
+        value=float(st.session_state.get("target_payment_ngn", 0.0)),
+        key=f"{key_prefix}_target_pay"
+    )
+    st.session_state.target_payment_ngn = target_amt
+
+    # Multi-note running cash basket controls
+    naira_info = detect_naira_banknotes(text)
+    basket_notes: list[int] = list(st.session_state.get("cash_basket_notes", []))
+    basket_total = float(sum(basket_notes))
+
+    b_col1, b_col2, b_col3, b_col4 = st.columns([2, 1, 1, 1])
+    with b_col1:
+        if naira_info.get("notes"):
+            detected_str = ", ".join(f"₦{n:,}" for n in naira_info["notes"])
+            st.write(f"**Current scan notes:** {detected_str} (₦{naira_info['total_ngn']:,})")
+        else:
+            st.caption("Snap a Naira banknote or load a Naira sample to add to your running basket.")
+
+    with b_col2:
+        if st.button(
+            "➕ Add scan to basket",
+            key=f"{key_prefix}_add_basket",
+            disabled=not bool(naira_info.get("notes")),
+            type="primary",
+            use_container_width=True
+        ):
+            st.session_state.cash_basket_notes = basket_notes + list(naira_info["notes"])
+            st.rerun()
+
+    with b_col3:
+        if st.button(
+            "↩️ Undo last",
+            key=f"{key_prefix}_undo_basket",
+            disabled=not bool(basket_notes),
+            use_container_width=True
+        ):
+            st.session_state.cash_basket_notes = basket_notes[:-1]
+            st.rerun()
+
+    with b_col4:
+        if st.button(
+            "🗑️ Clear basket",
+            key=f"{key_prefix}_clear_basket",
+            disabled=not bool(basket_notes),
+            use_container_width=True
+        ):
+            st.session_state.cash_basket_notes = []
+            st.rerun()
+
+    basket_notes = list(st.session_state.get("cash_basket_notes", []))
+    basket_total = float(sum(basket_notes))
+    if basket_notes:
+        notes_breakdown = ", ".join(f"₦{n:,}" for n in basket_notes)
+        st.info(
+            f"🧺 **Cash Basket ({len(basket_notes)} note(s)):** {notes_breakdown}  |  "
+            f"**Running Total:** **₦{basket_total:,.2f}**"
+        )
+
+    return target_amt, basket_total
+
+
+def render_instant_browser_tts(
+    text: str,
+    button_label: str = "🔊 Read Aloud Offline (Zero Data)",
+    auto_play: bool = False
+):
+    """Client-side Web Speech API reader for zero-latency, zero-data offline voice feedback."""
     payload = json.dumps(str(text or "")[:3500], ensure_ascii=False)
     payload = payload.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
     safe_label = html.escape(button_label)
+    auto_js = "true" if auto_play else "false"
 
     components.html(
         f"""
@@ -1271,8 +1594,9 @@ def render_instant_browser_tts(text: str, button_label: str = "🔊 Read Aloud O
         </div>
         <script>
         const txt = {payload};
+        const autoPlay = {auto_js};
         const statusEl = document.getElementById('ttsStatus');
-        document.getElementById('speakBtn').onclick = () => {{
+        function speakNow() {{
             if (!('speechSynthesis' in window)) {{
                 statusEl.textContent = 'Browser speech unavailable.';
                 return;
@@ -1282,11 +1606,15 @@ def render_instant_browser_tts(text: str, button_label: str = "🔊 Read Aloud O
             u.onstart = () => statusEl.textContent = 'Reading offline...';
             u.onend = () => statusEl.textContent = 'Done.';
             window.speechSynthesis.speak(u);
-        }};
+        }}
+        document.getElementById('speakBtn').onclick = speakNow;
         document.getElementById('stopBtn').onclick = () => {{
             if ('speechSynthesis' in window) window.speechSynthesis.cancel();
             statusEl.textContent = 'Stopped.';
         }};
+        if (autoPlay && txt.trim().length > 0) {{
+            setTimeout(speakNow, 250);
+        }}
         </script>
         """,
         height=52,
@@ -1294,19 +1622,48 @@ def render_instant_browser_tts(text: str, button_label: str = "🔊 Read Aloud O
 
 
 def render_triage_panel(text: str, key_prefix: str):
-    triage = analyze_document_triage(text)
+    target_amt, basket_total = render_payment_target_and_basket(text, key_prefix)
+
+    triage = analyze_document_triage(
+        text,
+        target_payment_ngn=target_amt,
+        basket_total_ngn=basket_total
+    )
     if not triage:
         return
 
     st.markdown(
         """
         <div class="ns-triage-card">
-            <strong>⚡ Key Facts First (Bill, Prescription & Notice Triage)</strong><br>
-            <span>Critical figures, dates, dosage flags, and warnings surfaced before full-text reading.</span>
+            <strong>⚡ Key Facts, Naira Cash & Screen Triage</strong><br>
+            <span>Banknote counts, running cash basket, payment screen status, amounts, dates, and warnings surfaced first.</span>
         </div>
         """,
         unsafe_allow_html=True
     )
+
+    naira_info = triage.get("naira_info", {})
+    if naira_info.get("notes"):
+        notes_list = ", ".join(f"₦{n:,}" for n in naira_info["notes"])
+        st.success(
+            f"💵 **Scan Notes:** {notes_list}  |  "
+            f"**Scan Subtotal:** ₦{naira_info['total_ngn']:,}  |  "
+            f"**CBN Text:** {'Verified' if naira_info['cbn_verified'] else 'Partial'}"
+        )
+
+    color_hint = st.session_state.get("last_image_color_hint")
+    if color_hint and naira_info.get("notes"):
+        st.caption(f"Visual note tint check: {color_hint}")
+
+    receipt_info = triage.get("receipt_info", {})
+    if receipt_info:
+        r_status = receipt_info.get("status", "Unknown")
+        r_amt = receipt_info.get("amount") or "Not shown"
+        r_rec = receipt_info.get("recipient") or "Not shown"
+        st.info(f"📱 **Screen / Receipt Readout:** Status **{r_status}** · Amount **{r_amt}** · Recipient **{r_rec}**")
+
+    if triage.get("payment_status_line"):
+        st.warning(f"🧮 **Payment Check:** {triage['payment_status_line']}")
 
     t1, t2, t3 = st.columns(3)
     with t1:
@@ -1340,7 +1697,8 @@ def render_triage_panel(text: str, key_prefix: str):
 
     render_instant_browser_tts(
         triage["spoken_brief"],
-        button_label="🔊 Speak Key Facts Offline (Instant / Zero Data)"
+        button_label="🔊 Speak Key Facts Offline (Instant / Zero Data)",
+        auto_play=bool(st.session_state.get("auto_speak_triage", False))
     )
 
     with st.expander("🎧 Download Key Facts MP3 Brief (Cloud TTS)"):
@@ -1448,7 +1806,8 @@ def render_speech_controls(text, key_prefix):
 
     render_instant_browser_tts(
         sections[selected_part],
-        button_label=f"🔊 Read Part {selected_part + 1} Offline (Browser Voice)"
+        button_label=f"🔊 Read Part {selected_part + 1} Offline (Browser Voice)",
+        auto_play=False
     )
 
     st.warning(
@@ -1669,12 +2028,12 @@ def render_auth_portal():
         <div class="ns-header-bar">
             <div>
                 <h1>👁️ NaijaSight</h1>
-                <p>Accessible Document Intelligence, Bill & Prescription Triage, and Voice Suite</p>
+                <p>Assistive Naira Cash Verification, Running Cash Tally, Screen/Bill Reader & Voice Suite</p>
             </div>
             <div class="ns-chip-row">
-                <span class="ns-chip">SQLite + Excel + PDF</span>
-                <span class="ns-chip">Low-Vision Ready</span>
-                <span class="ns-chip">Up to 500 MB</span>
+                <span class="ns-chip">Running Cash Basket</span>
+                <span class="ns-chip">Voice Payment Target</span>
+                <span class="ns-chip">Offline Voice Ready</span>
             </div>
         </div>
         """,
@@ -1684,19 +2043,18 @@ def render_auth_portal():
     col_left, col_right = st.columns([1.15, 1], gap="large")
 
     with col_left:
-        st.subheader("Clear, Structured Document & Voice Tools")
+        st.subheader("Everyday Independence for Blind & Low-Vision Users")
         st.write(
-            "Built for blind, low-vision, and everyday readers who need fast extraction, "
-            "key-fact triage on bills and prescriptions, offline browser speech, "
-            "and persistent record management."
+            "Snap Naira notes one by one into a running cash basket, speak the amount you want to pay, "
+            "read bank or POS screens, triage bills and prescriptions, and listen offline."
         )
         st.markdown(
             """
-            - **Read a document:** Extract text from PDF, Word, Excel, CSV, PowerPoint, EPUB, RTF, TXT, and images with key-fact triage
-            - **Scan with camera:** Capture printed pages or notices with layout-aware OCR and enhancement modes
-            - **Listen to text:** Use zero-data offline browser speech, chunked MP3 audio, or downloadable offline HTML readers
-            - **Voice tools:** Transcribe spoken voice recordings and store them in your account history
-            - **Accessibility & AI ethics:** Document user-testing observations and review consent and reliability guardrails
+            - **Multi-Note Cash Basket & Change Check:** Add scanned notes one by one, undo mistakes, and hear totals or expected change
+            - **Voice Payment Target:** Speak your payment target and compare against cash counted or transfer screens
+            - **Screen & Document Triage:** Upload bank/POS screenshots, PDFs, Word, Excel, or images with instant key facts
+            - **Offline Voice & HTML Reader:** Instant browser speech, optional hands-free auto-read, and standalone offline HTML readers
+            - **Accessibility & AI Ethics:** Log real PWD testing observations and maintain transparent safety guardrails
             """
         )
 
@@ -1769,8 +2127,8 @@ def render_sidebar():
 
         pages = [
             "Home",
-            "Read a document",
             "Scan with camera",
+            "Read a document",
             "Listen to text",
             "Voice tools",
             "Activity history",
@@ -1779,7 +2137,11 @@ def render_sidebar():
         page = st.radio("Modules", pages, key="nav_page")
 
         st.divider()
-        st.markdown("**Display & Editor**")
+        st.markdown("**Voice & Display**")
+        st.toggle(
+            "Hands-free auto-speak key facts",
+            key="auto_speak_triage"
+        )
         st.selectbox(
             "Theme",
             ["Standard (Crisp Light)", "High Contrast (Pure White / Black)", "Low-Glare Slate"],
@@ -1805,6 +2167,7 @@ def render_sidebar():
 def render_portal_header(active_page):
     records = get_activity_records() if not st.session_state.demo_mode else []
     total_words = sum(r["word_count"] for r in records)
+    basket_total = sum(st.session_state.get("cash_basket_notes", []))
 
     st.markdown(
         f"""
@@ -1814,6 +2177,7 @@ def render_portal_header(active_page):
                 <p>Signed in as <strong>{html.escape(st.session_state.full_name or '')}</strong> (@{html.escape(st.session_state.username or '')})</p>
             </div>
             <div class="ns-chip-row">
+                <span class="ns-chip">Cash basket: ₦{basket_total:,}</span>
                 <span class="ns-chip">Saved records: {len(records)}</span>
                 <span class="ns-chip">Words processed: {total_words:,}</span>
             </div>
@@ -1836,8 +2200,8 @@ def render_home():
     st.caption("Choose a tool below to get started.")
 
     cards = [
-        ("📄", "Read a document", "Extract text from PDF, Word, Excel, CSV, PowerPoint, EPUB, RTF, TXT, and images with key-fact triage.", "Read a document"),
-        ("📷", "Scan with camera", "Capture printed pages, bills, or notices with your camera using Standard or Enhanced OCR.", "Scan with camera"),
+        ("📷", "Scan with camera", "Snap Naira notes into a running basket, set payment amount by voice or number, and hear totals or change aloud.", "Scan with camera"),
+        ("📄", "Read a document", "Upload screenshots of bank/POS apps, PDFs, Word, Excel, or images with instant key-fact triage.", "Read a document"),
         ("🔊", "Listen to text", "Read extracted or pasted text aloud offline or in clean MP3 parts and download an offline reader.", "Listen to text"),
         ("🎙️", "Voice tools", "Record spoken instructions or notes and transcribe them into editable text.", "Voice tools"),
     ]
@@ -1858,8 +2222,8 @@ def render_home():
 
     st.divider()
     st.subheader("How It Works")
-    st.write("1. Pick a module.  2. Upload a file, take a photo, or load a sample.  3. Review key facts and edit text.  4. Listen, export, or open offline.")
-    st.info("Keep printed text upright and well-lit for cleaner OCR, and verify critical amounts, dates, and dosages.")
+    st.write("1. Pick a module.  2. Set amount to pay (by voice or number).  3. Snap notes/screens or upload a file & add notes to basket.  4. Listen offline or export.")
+    st.info("Keep banknotes flat and well-lit when snapping, and always confirm final transfer or cash amounts before completing payment.")
 
 
 # ============================================================
@@ -1906,7 +2270,7 @@ def render_result_workspace():
 
     edited_text = st.text_area(
         "Review or edit text",
-        height=280,
+        height=240,
         key="editable_result"
     )
     st.session_state.extracted_text = edited_text
@@ -1952,10 +2316,10 @@ def render_result_workspace():
 # ============================================================
 
 def render_document_reader():
-    st.subheader("Read a Document or Image")
-    st.write("Upload a file or load a sample bill or prescription to test triage and reading.")
+    st.subheader("Read a Document, Screenshot, or Image")
+    st.write("Upload a screenshot of a bank/POS screen, bill, prescription, or document—or load a sample below.")
 
-    with st.expander("Sample documents (bills, prescriptions & notices)"):
+    with st.expander("Sample scenarios (Naira notes, bank screen, bill & prescription)"):
         sample_choice = st.selectbox("Choose a sample", list(SAMPLE_DOCUMENTS.keys()))
         if st.button("Load sample", key="load_sample_doc"):
             t0 = time.perf_counter()
@@ -1966,6 +2330,7 @@ def render_document_reader():
             st.session_state.current_file_type = ".txt"
             st.session_state.last_ocr_confidence = None
             st.session_state.last_uncertain_words = []
+            st.session_state.last_image_color_hint = None
             st.session_state.last_process_ms = round((time.perf_counter() - t0) * 1000, 1)
             log_activity(f"{sample_choice}.txt", ".txt", sample_text)
             st.success("Sample loaded.")
@@ -2035,27 +2400,40 @@ def render_document_reader():
 
 
 # ============================================================
-# 29. CAMERA SCANNER
+# 29. CAMERA SCANNER (MONEY, SCREENS & PRINTED PAGES)
 # ============================================================
 
 def render_camera_scanner():
-    st.subheader("Scan with Camera")
-    st.write("Capture a printed page, bill, prescription, or notice.")
+    st.subheader("Scan Money, Screen, or Printed Page")
+    st.write("Snap Naira banknotes one by one into your running cash basket, check payment/change, or read a screen/bill.")
 
-    camera_mode = st.radio(
-        "Reading scope",
-        ["Read Entire Image", "Read Main Document"],
-        horizontal=True
+    pay_amt = st.number_input(
+        "Amount you want to pay (₦ NGN — set before or after snapping)",
+        min_value=0.0,
+        step=50.0,
+        value=float(st.session_state.get("target_payment_ngn", 0.0)),
+        key="camera_target_pay_input"
     )
-    camera_quality = st.radio(
-        "OCR preparation",
-        ["Standard", "Enhanced"],
-        horizontal=True
-    )
+    st.session_state.target_payment_ngn = pay_amt
+
+    c1, c2 = st.columns(2)
+    with c1:
+        camera_mode = st.radio(
+            "Reading scope",
+            ["Read Entire Image", "Read Main Document"],
+            horizontal=True
+        )
+    with c2:
+        camera_quality = st.radio(
+            "OCR preparation",
+            ["Standard", "Enhanced"],
+            horizontal=True
+        )
+
     camera_image = st.camera_input("Take a picture")
 
     if camera_image:
-        if st.button("Read picture", type="primary"):
+        if st.button("Read & verify picture", type="primary"):
             clear_current_result()
             try:
                 t0 = time.perf_counter()
@@ -2075,9 +2453,9 @@ def render_camera_scanner():
                     st.session_state.editable_result = extracted_text
 
                     log_activity("Camera scan", "camera", extracted_text)
-                    st.success("Text extracted.")
+                    st.success("Picture read and verified.")
                 else:
-                    st.warning("No text detected. Try a clearer photo.")
+                    st.warning("No text or banknote figures detected. Try better lighting and hold steady.")
 
             except Exception as error:
                 st.error(f"Could not process picture: {error}")
@@ -2093,15 +2471,15 @@ def render_listen_page():
     st.subheader("Listen to Text")
     st.write("Paste text, load a sample, or use your current workspace text.")
 
-    if st.button("Load sample bill", key="listen_sample_btn"):
-        st.session_state["standalone_listen_text"] = SAMPLE_DOCUMENTS["⚡ EKEDC Electricity Utility Bill"]
+    if st.button("Load sample ₦1,000 note", key="listen_sample_btn"):
+        st.session_state["standalone_listen_text"] = SAMPLE_DOCUMENTS["💵 Single ₦1,000 Note (Snap & Add to Basket)"]
         st.rerun()
 
     initial_text = st.session_state.get("extracted_text", "")
     text_to_read = st.text_area(
         "Text to read aloud",
         value=initial_text,
-        height=260,
+        height=240,
         key="standalone_listen_text"
     )
     if text_to_read.strip():
@@ -2191,7 +2569,7 @@ def render_history():
     with f_col1:
         search_query = st.text_input(
             "Search filename or text",
-            placeholder="e.g., bill, prescription, camera..."
+            placeholder="e.g., naira, receipt, bill, prescription..."
         ).strip().lower()
 
     available_types = sorted({(r["file_type"] or "unknown") for r in records})
@@ -2310,8 +2688,8 @@ def render_accessibility_and_ethics():
     st.markdown(
         """
         - **Explicit Consent:** Cloud speech and voice transcription require an explicit user checkbox before sending data.
-        - **Low-Vision & Offline Support:** Adjustable editor font size, contrast themes, offline browser speech, and standalone offline HTML readers.
-        - **Reliability Guardrails:** OCR confidence scores and uncertain-word flags highlight areas that deserve manual verification.
+        - **Low-Vision & Offline Support:** Adjustable editor font size, contrast themes, hands-free auto-speak option, offline browser speech, and standalone offline HTML readers.
+        - **Financial & Medical Reliability Guardrails:** Multi-note cash baskets, payment/change calculations, screen transfer readouts, and OCR confidence scores remind users to verify critical amounts, transfers, and dosages.
         """
     )
 
@@ -2320,7 +2698,7 @@ def render_accessibility_and_ethics():
     with st.form("a11y_feedback_form"):
         tester_group = st.text_input(
             "Tester profile or context",
-            placeholder="e.g., Low-vision student on mobile / Screen-reader tester"
+            placeholder="e.g., Blind user testing multi-note cash basket / Low-vision mobile tester"
         )
         severity = st.selectbox("Severity", ["High", "Medium", "Low"])
         issue_found = st.text_area("Issue observed", height=90)
@@ -2357,10 +2735,10 @@ def render_logged_in_portal():
 
     if page == "Home":
         render_home()
-    elif page == "Read a document":
-        render_document_reader()
     elif page == "Scan with camera":
         render_camera_scanner()
+    elif page == "Read a document":
+        render_document_reader()
     elif page == "Listen to text":
         render_listen_page()
     elif page == "Voice tools":
@@ -2372,7 +2750,7 @@ def render_logged_in_portal():
 
     st.divider()
     st.caption(
-        "NaijaSight · Verify important names, dates, dosages, and figures."
+        "NaijaSight · Verify important cash amounts, bank transfers, dates, and dosages."
     )
 
 
