@@ -43,7 +43,7 @@ st.set_page_config(
 )
 
 APP_NAME = "NaijaSight"
-APP_VERSION = "2.2-DSN"
+APP_VERSION = "2.3-DSN"
 BASE_DIR = Path(__file__).parent
 DB_PATH = BASE_DIR / "naijasight_portal.db"
 
@@ -57,52 +57,80 @@ Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
 
 
 # ============================================================
-# 2. INSTITUTIONAL PORTAL, LOW-VISION & MOBILE STYLING
+# 2. EDITORIAL PORTAL, LOW-VISION & MOBILE STYLING
 # ============================================================
 
 def apply_portal_styles(vision_theme: str = "Standard", reader_font_px: int = 18):
-    if vision_theme == "High Contrast (Yellow / Black)":
-        bg_color = "#000000"
-        card_bg = "#0A0A0A"
-        text_color = "#FFE600"
-        muted_color = "#FFF380"
-        border_color = "#FFE600"
-        banner_bg = "linear-gradient(120deg, #000000 0%, #141414 100%)"
-        accent_color = "#FFE600"
-        input_bg = "#000000"
-    elif vision_theme == "Low-Glare Night (Cream / Navy)":
-        bg_color = "#0B172A"
-        card_bg = "#13233C"
-        text_color = "#F8FAFC"
-        muted_color = "#CBD5E1"
-        border_color = "#334155"
-        banner_bg = "linear-gradient(120deg, #091324 0%, #162B4D 100%)"
-        accent_color = "#FBBF24"
-        input_bg = "#0F1E34"
-    else:
-        bg_color = "#F4F7FB"
+    if vision_theme == "High Contrast (Print Ledger)":
+        bg_color = "#FFFFFF"
         card_bg = "#FFFFFF"
-        text_color = "#102033"
-        muted_color = "#52647A"
-        border_color = "#DCE4EF"
-        banner_bg = "linear-gradient(120deg, #0B1F3A 0%, #134074 58%, #0E6BA8 100%)"
-        accent_color = "#F59E0B"
+        text_color = "#000000"
+        muted_color = "#262626"
+        border_color = "#000000"
+        banner_bg = "#FFFFFF"
+        banner_text = "#000000"
+        banner_border = "#8B1E1E"
+        tag_bg = "#F4F4F5"
+        tag_text = "#000000"
+        tag_border = "#000000"
+        accent_color = "#8B1E1E"
+        accent_hover = "#691515"
+        ochre_color = "#8B1E1E"
         input_bg = "#FFFFFF"
+    elif vision_theme == "Low-Glare Night (Warm Charcoal)":
+        bg_color = "#161615"
+        card_bg = "#201F1D"
+        text_color = "#F4F1EA"
+        muted_color = "#C7C2B8"
+        border_color = "#3A3732"
+        banner_bg = "#201F1D"
+        banner_text = "#F4F1EA"
+        banner_border = "#D97706"
+        tag_bg = "#2C2A27"
+        tag_text = "#F4F1EA"
+        tag_border = "#524E48"
+        accent_color = "#2F6F57"
+        accent_hover = "#245744"
+        ochre_color = "#D97706"
+        input_bg = "#1A1917"
+    else:
+        # Editorial Stone & Botanical Forest — calm, tactile, non-AI aesthetic
+        bg_color = "#F7F5F0"
+        card_bg = "#FFFDF9"
+        text_color = "#1C1917"
+        muted_color = "#57534E"
+        border_color = "#E4DFD5"
+        banner_bg = "#FFFDF9"
+        banner_text = "#1C1917"
+        banner_border = "#1E4D3B"
+        tag_bg = "#F2EFE9"
+        tag_text = "#1E4D3B"
+        tag_border = "#D6D0C4"
+        accent_color = "#1E4D3B"
+        accent_hover = "#163B2D"
+        ochre_color = "#B45309"
+        input_bg = "#FFFDF9"
 
     st.markdown(
         f"""
         <style>
         :root {{
-            --portal-navy: #0F294A;
-            --portal-blue: #1652B8;
-            --portal-teal: #0D7A6E;
-            --portal-amber: {accent_color};
+            --portal-forest: #1E4D3B;
+            --portal-ochre: {ochre_color};
+            --portal-accent: {accent_color};
+            --portal-accent-hover: {accent_hover};
             --portal-bg: {bg_color};
             --portal-card: {card_bg};
             --portal-border: {border_color};
             --portal-text: {text_color};
             --portal-muted: {muted_color};
             --portal-input-bg: {input_bg};
+            --banner-bg: {banner_bg};
+            --banner-text: {banner_text};
+            --banner-border: {banner_border};
+            --tag-bg: {tag_bg};
+            --tag-text: {tag_text};
+            --tag-border: {tag_border};
         }}
 
         [data-testid="stAppViewContainer"] {{
@@ -118,20 +146,19 @@ def apply_portal_styles(vision_theme: str = "Standard", reader_font_px: int = 18
         }}
 
         .block-container {{
-            max-width: 1200px;
+            max-width: 1180px;
             padding-top: 1.5rem;
             padding-bottom: 3.5rem;
         }}
 
         .portal-banner {{
-            background: {banner_bg};
-            color: #FFFFFF;
-            padding: 1.35rem 1.6rem;
-            border-radius: 16px;
+            background: var(--banner-bg);
+            color: var(--banner-text);
+            padding: 1.3rem 1.55rem;
+            border-radius: 12px;
             margin-bottom: 1.35rem;
             border: 1px solid var(--portal-border);
-            border-bottom: 4px solid var(--portal-amber);
-            box-shadow: 0 10px 24px rgba(15, 41, 74, 0.14);
+            border-left: 5px solid var(--banner-border);
             display: flex;
             flex-wrap: wrap;
             justify-content: space-between;
@@ -139,59 +166,80 @@ def apply_portal_styles(vision_theme: str = "Standard", reader_font_px: int = 18
             gap: 1rem;
         }}
 
-        .portal-banner h1, .portal-banner h2, .portal-banner p, .portal-banner strong {{
-            color: #FFFFFF !important;
+        .portal-banner h1,
+        .portal-banner h2,
+        .portal-banner p,
+        .portal-banner strong {{
+            color: var(--banner-text) !important;
             margin: 0 !important;
         }}
 
+        .portal-banner p {{
+            color: var(--portal-muted) !important;
+            margin-top: 0.2rem !important;
+            font-size: 0.95rem;
+        }}
+
         .portal-tag {{
-            background: rgba(255, 255, 255, 0.14);
-            border: 1px solid rgba(255, 255, 255, 0.28);
-            color: #F8FAFC;
-            padding: 0.35rem 0.75rem;
-            border-radius: 999px;
-            font-size: 0.82rem;
+            background: var(--tag-bg);
+            border: 1px solid var(--tag-border);
+            color: var(--tag-text);
+            padding: 0.32rem 0.72rem;
+            border-radius: 6px;
+            font-size: 0.8rem;
             font-weight: 600;
+            letter-spacing: 0.01em;
         }}
 
         .kpi-card {{
             background: var(--portal-card);
             border: 1px solid var(--portal-border);
-            border-left: 5px solid var(--portal-amber);
-            border-radius: 12px;
+            border-top: 3px solid var(--portal-accent);
+            border-radius: 10px;
             padding: 0.95rem 1.1rem;
-            box-shadow: 0 3px 10px rgba(16, 32, 51, 0.04);
             margin-bottom: 0.5rem;
         }}
 
         .kpi-label {{
-            font-size: 0.78rem;
+            font-size: 0.75rem;
             font-weight: 700;
             text-transform: uppercase;
-            letter-spacing: 0.05em;
+            letter-spacing: 0.06em;
             color: var(--portal-muted);
         }}
 
         .kpi-value {{
             font-size: 1.45rem;
-            font-weight: 800;
+            font-weight: 700;
             color: var(--portal-text);
-            margin-top: 0.15rem;
+            margin-top: 0.2rem;
         }}
 
         .triage-box {{
             background: var(--portal-card);
             border: 1px solid var(--portal-border);
-            border-left: 6px solid #D97706;
-            border-radius: 14px;
-            padding: 1.1rem 1.25rem;
+            border-left: 4px solid var(--portal-ochre);
+            border-radius: 10px;
+            padding: 1rem 1.2rem;
             margin-bottom: 1rem;
             color: var(--portal-text);
         }}
 
+        div.stButton > button[kind="primary"] {{
+            background-color: var(--portal-accent);
+            border-color: var(--portal-accent);
+            color: #FFFDF9;
+        }}
+
+        div.stButton > button[kind="primary"]:hover {{
+            background-color: var(--portal-accent-hover);
+            border-color: var(--portal-accent-hover);
+            color: #FFFDF9;
+        }}
+
         div.stButton > button,
         div.stDownloadButton > button {{
-            border-radius: 10px;
+            border-radius: 8px;
             min-height: 46px;
             font-weight: 600;
         }}
@@ -209,7 +257,7 @@ def apply_portal_styles(vision_theme: str = "Standard", reader_font_px: int = 18
         input:focus-visible,
         textarea:focus-visible,
         select:focus-visible {{
-            outline: 3px solid var(--portal-amber) !important;
+            outline: 3px solid var(--portal-ochre) !important;
             outline-offset: 2px !important;
         }}
 
@@ -636,12 +684,12 @@ def build_pdf_report_bytes(records: list[dict]) -> bytes:
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
 
-    pdf.set_fill_color(15, 41, 74)
-    pdf.set_text_color(255, 255, 255)
+    pdf.set_fill_color(30, 77, 59)
+    pdf.set_text_color(255, 253, 249)
     pdf.set_font("Helvetica", "B", 15)
     pdf.cell(0, 12, _sanitize_pdf_text("NaijaSight Portal - Extraction & Activity Report"), ln=True, fill=True)
 
-    pdf.set_text_color(30, 41, 59)
+    pdf.set_text_color(28, 25, 23)
     pdf.set_font("Helvetica", "", 10)
     pdf.ln(3)
     user_label = f"{st.session_state.get('full_name', '')} (@{st.session_state.get('username', '')})"
@@ -651,10 +699,10 @@ def build_pdf_report_bytes(records: list[dict]) -> bytes:
     pdf.ln(4)
 
     for idx, rec in enumerate(records, start=1):
-        pdf.set_draw_color(203, 213, 225)
-        pdf.set_fill_color(241, 245, 249)
+        pdf.set_draw_color(214, 208, 196)
+        pdf.set_fill_color(242, 239, 233)
         pdf.set_font("Helvetica", "B", 11)
-        pdf.set_text_color(15, 41, 74)
+        pdf.set_text_color(30, 77, 59)
         title_line = (
             f"{idx}. {rec['filename']}  [{rec['file_type'] or 'file'}]  "
             f"| {rec['word_count']} words | {rec['created_at']}"
@@ -668,7 +716,7 @@ def build_pdf_report_bytes(records: list[dict]) -> bytes:
             body = body[:2500] + "\n... [Truncated in PDF preview; full text included in TXT/Excel export]"
 
         pdf.set_font("Helvetica", "", 10)
-        pdf.set_text_color(15, 23, 42)
+        pdf.set_text_color(28, 25, 23)
         pdf.multi_cell(0, 5.5, _sanitize_pdf_text(body), border="LRB")
         pdf.ln(4)
 
@@ -1178,13 +1226,13 @@ def render_instant_browser_tts(text: str, button_label: str = "🔊 Read Aloud O
     components.html(
         f"""
         <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; font-family:Arial,sans-serif;">
-            <button id="speakBtn" style="background:#0F294A;color:#fff;border:none;border-radius:8px;padding:10px 14px;font-weight:600;cursor:pointer;">
+            <button id="speakBtn" style="background:#1E4D3B;color:#FFFDF9;border:none;border-radius:8px;padding:10px 14px;font-weight:600;cursor:pointer;">
                 {safe_label}
             </button>
-            <button id="stopBtn" style="background:#E2E8F0;color:#0F172A;border:1px solid #94A3B8;border-radius:8px;padding:10px 14px;font-weight:600;cursor:pointer;">
+            <button id="stopBtn" style="background:#F2EFE9;color:#1C1917;border:1px solid #C8C1B4;border-radius:8px;padding:10px 14px;font-weight:600;cursor:pointer;">
                 ⏹ Stop
             </button>
-            <span id="ttsStatus" style="font-size:13px;color:#475569;"></span>
+            <span id="ttsStatus" style="font-size:13px;color:#57534E;"></span>
         </div>
         <script>
         const txt = {payload};
@@ -1411,28 +1459,28 @@ def build_offline_reader_html(text, document_title="NaijaSight Offline Reader"):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#172554">
+<meta name="theme-color" content="#1E4D3B">
 <title>{safe_title}</title>
 <style>
-:root {{ color-scheme: light; --bg:#f4f7fb; --panel:#fff; --ink:#172033; --accent:#174ea6; --muted:#526078; }}
+:root {{ color-scheme: light; --bg:#f7f5f0; --panel:#fffdf9; --ink:#1c1917; --accent:#1e4d3b; --muted:#57534e; }}
 * {{ box-sizing:border-box; }}
 body {{ margin:0; background:var(--bg); color:var(--ink); font-family:Arial, sans-serif; line-height:1.65; }}
-header {{ background:#172554; color:white; padding:20px 16px; }}
+header {{ background:#1e4d3b; color:#fffdf9; padding:20px 16px; }}
 header h1 {{ margin:0 auto; max-width:900px; font-size:1.45rem; }}
 main {{ max-width:900px; margin:20px auto; padding:0 14px 40px; }}
-.panel {{ background:var(--panel); border:1px solid #d8e0ec; border-radius:14px; padding:16px; margin-bottom:16px; }}
+.panel {{ background:var(--panel); border:1px solid #e4dfd5; border-radius:12px; padding:16px; margin-bottom:16px; }}
 .controls {{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; }}
-button, select {{ min-height:44px; border-radius:9px; border:1px solid #9aa9bd; padding:9px 13px; font-size:1rem; background:white; color:#172033; }}
-button.primary {{ background:var(--accent); color:white; border-color:var(--accent); }}
-button:focus, select:focus, input:focus {{ outline:3px solid #f0b429; outline-offset:2px; }}
+button, select {{ min-height:44px; border-radius:8px; border:1px solid #c8c1b4; padding:9px 13px; font-size:1rem; background:#fffdf9; color:#1c1917; }}
+button.primary {{ background:var(--accent); color:#fffdf9; border-color:var(--accent); }}
+button:focus, select:focus, input:focus {{ outline:3px solid #b45309; outline-offset:2px; }}
 label {{ display:block; font-weight:600; margin:8px 0 4px; }}
 #readerText {{ white-space:pre-wrap; overflow-wrap:anywhere; font-size:1.2rem; line-height:1.8; }}
 #status {{ color:var(--muted); min-height:1.5em; }}
 .small {{ color:var(--muted); font-size:.92rem; }}
-body.high-contrast {{ --bg:#000; --panel:#000; --ink:#fff; --accent:#ffdf00; --muted:#eee; color:#fff; }}
-body.high-contrast header {{ background:#000; border-bottom:2px solid #ffdf00; }}
-body.high-contrast button, body.high-contrast select {{ background:#000; color:#fff; border:2px solid #ffdf00; }}
-body.high-contrast button.primary {{ background:#ffdf00; color:#000; }}
+body.high-contrast {{ --bg:#ffffff; --panel:#ffffff; --ink:#000000; --accent:#8b1e1e; --muted:#262626; color:#000000; }}
+body.high-contrast header {{ background:#ffffff; color:#000000; border-bottom:2px solid #000000; }}
+body.high-contrast button, body.high-contrast select {{ background:#ffffff; color:#000000; border:2px solid #000000; }}
+body.high-contrast button.primary {{ background:#8b1e1e; color:#ffffff; }}
 @media (max-width:600px) {{
   header h1 {{ font-size:1.2rem; }}
   main {{ margin:12px auto; padding:0 10px 28px; }}
@@ -1699,7 +1747,7 @@ def render_sidebar():
         st.markdown("**Low-Vision Display**")
         st.selectbox(
             "Contrast theme",
-            ["Standard", "High Contrast (Yellow / Black)", "Low-Glare Night (Cream / Navy)"],
+            ["Standard", "High Contrast (Print Ledger)", "Low-Glare Night (Warm Charcoal)"],
             key="vision_theme"
         )
         st.slider(
