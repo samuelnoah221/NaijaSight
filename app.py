@@ -1,26 +1,25 @@
-import streamlit as st
+import html
+import io
+import json
+import re
+import secrets
+import sqlite3
+from datetime import datetime
+from pathlib import Path
+
 import easyocr
 import fitz
 import numpy as np
 import pandas as pd
-import io
-import html
-import re
-import json
-import sqlite3
-import hashlib
-import secrets
-
-from pathlib import Path
-from datetime import datetime
-from PIL import Image, ImageOps, ImageEnhance
-from gtts import gTTS
-
+import streamlit as st
+from bs4 import BeautifulSoup
 from docx import Document
+from ebooklib import ITEM_DOCUMENT, epub
+from fpdf import FPDF
+from gtts import gTTS
+from PIL import Image, ImageEnhance, ImageOps
 from pptx import Presentation
 from striprtf.striprtf import rtf_to_text
-from ebooklib import epub, ITEM_DOCUMENT
-from bs4 import BeautifulSoup
 
 try:
     import speech_recognition as sr
@@ -34,14 +33,13 @@ except ImportError:
 # ============================================================
 
 st.set_page_config(
-    page_title="NaijaSight",
+    page_title="NaijaSight Portal | Assistive Document & Voice Suite",
     page_icon="👁️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 APP_NAME = "NaijaSight"
-
 BASE_DIR = Path(__file__).parent
 DB_PATH = BASE_DIR / "naijasight_portal.db"
 
@@ -55,51 +53,141 @@ Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
 
 
 # ============================================================
-# 2. PAGE STYLING
+# 2. INSTITUTIONAL PORTAL & MOBILE STYLING
 # ============================================================
 
 st.markdown(
     """
     <style>
-    .main {
-        padding-top: 1.5rem;
+    :root {
+        --portal-navy: #0F294A;
+        --portal-blue: #1652B8;
+        --portal-teal: #0D7A6E;
+        --portal-amber: #F59E0B;
+        --portal-bg: #F4F7FB;
+        --portal-card: #FFFFFF;
+        --portal-border: #DCE4EF;
+        --portal-text: #102033;
+        --portal-muted: #52647A;
+    }
+
+    [data-testid="stAppViewContainer"] {
+        background-color: var(--portal-bg);
+        color: var(--portal-text);
     }
 
     .block-container {
-        max-width: 1150px;
-        padding-top: 2rem;
-        padding-bottom: 3rem;
+        max-width: 1200px;
+        padding-top: 1.5rem;
+        padding-bottom: 3.5rem;
+    }
+
+    .portal-banner {
+        background: linear-gradient(120deg, #0B1F3A 0%, #134074 58%, #0E6BA8 100%);
+        color: #FFFFFF;
+        padding: 1.35rem 1.6rem;
+        border-radius: 16px;
+        margin-bottom: 1.35rem;
+        border-bottom: 4px solid var(--portal-amber);
+        box-shadow: 0 10px 24px rgba(15, 41, 74, 0.14);
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .portal-banner h1, .portal-banner h2, .portal-banner p {
+        color: #FFFFFF !important;
+        margin: 0 !important;
+    }
+
+    .portal-tag {
+        background: rgba(255, 255, 255, 0.14);
+        border: 1px solid rgba(255, 255, 255, 0.28);
+        color: #F8FAFC;
+        padding: 0.35rem 0.75rem;
+        border-radius: 999px;
+        font-size: 0.82rem;
+        font-weight: 600;
+    }
+
+    .kpi-card {
+        background: var(--portal-card);
+        border: 1px solid var(--portal-border);
+        border-left: 5px solid var(--portal-blue);
+        border-radius: 12px;
+        padding: 0.95rem 1.1rem;
+        box-shadow: 0 3px 10px rgba(16, 32, 51, 0.04);
+        margin-bottom: 0.5rem;
+    }
+
+    .kpi-label {
+        font-size: 0.78rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--portal-muted);
+    }
+
+    .kpi-value {
+        font-size: 1.45rem;
+        font-weight: 800;
+        color: var(--portal-navy);
+        margin-top: 0.15rem;
     }
 
     .app-subtitle {
-        color: #777777;
-        font-size: 16px;
+        color: var(--portal-muted);
+        font-size: 1.02rem;
+        margin-top: -0.25rem;
+        margin-bottom: 1rem;
     }
 
-    /* Improve the Streamlit interface on narrow phone screens. */
-    @media (max-width: 640px) {
+    div.stButton > button,
+    div.stDownloadButton > button {
+        border-radius: 10px;
+        min-height: 46px;
+        font-weight: 600;
+    }
+
+    button:focus-visible,
+    input:focus-visible,
+    textarea:focus-visible,
+    select:focus-visible {
+        outline: 3px solid var(--portal-amber) !important;
+        outline-offset: 2px !important;
+    }
+
+    /* Mobile & Phone Responsiveness */
+    @media (max-width: 768px) {
         .block-container {
-            padding-left: 0.8rem;
-            padding-right: 0.8rem;
+            padding-left: 0.85rem;
+            padding-right: 0.85rem;
             padding-top: 1rem;
+        }
+
+        .portal-banner {
+            padding: 1.1rem;
+            flex-direction: column;
+            align-items: flex-start;
         }
 
         div.stButton > button,
         div.stDownloadButton > button {
-            min-height: 48px;
+            min-height: 52px;
+            width: 100%;
             white-space: normal;
         }
 
         [data-testid="stFileUploader"] {
             width: 100%;
         }
-    }
 
-    div.stButton > button {
-        border-radius: 8px;
-        min-height: 42px;
+        textarea {
+            font-size: 16px !important;
+        }
     }
-
     </style>
     """,
     unsafe_allow_html=True
@@ -107,22 +195,17 @@ st.markdown(
 
 
 # ============================================================
-# 3. DATABASE
+# 3. DATABASE & DATA RETENTION ENGINE
 # ============================================================
 
 def get_connection():
-
-    connection = sqlite3.connect(DB_PATH)
-
+    connection = sqlite3.connect(DB_PATH, check_same_thread=False)
     connection.row_factory = sqlite3.Row
-
     return connection
 
 
 def init_db():
-
     with get_connection() as conn:
-
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS users (
@@ -145,11 +228,21 @@ def init_db():
                 file_type TEXT NOT NULL,
                 word_count INTEGER NOT NULL,
                 character_count INTEGER NOT NULL,
+                extracted_text TEXT NOT NULL DEFAULT '',
                 status TEXT NOT NULL,
                 created_at TEXT NOT NULL
             )
             """
         )
+
+        columns = [
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(activity)").fetchall()
+        ]
+        if "extracted_text" not in columns:
+            conn.execute(
+                "ALTER TABLE activity ADD COLUMN extracted_text TEXT NOT NULL DEFAULT ''"
+            )
 
 
 init_db()
@@ -160,7 +253,6 @@ init_db()
 # ============================================================
 
 def hash_password(password, salt=None):
-
     if salt is None:
         salt = secrets.token_hex(16)
 
@@ -175,16 +267,8 @@ def hash_password(password, salt=None):
 
 
 def verify_password(password, stored_hash, salt):
-
-    calculated_hash, _ = hash_password(
-        password,
-        salt
-    )
-
-    return secrets.compare_digest(
-        calculated_hash,
-        stored_hash
-    )
+    calculated_hash, _ = hash_password(password, salt)
+    return secrets.compare_digest(calculated_hash, stored_hash)
 
 
 # ============================================================
@@ -192,7 +276,6 @@ def verify_password(password, stored_hash, salt):
 # ============================================================
 
 def create_account(full_name, username, password):
-
     full_name = full_name.strip()
     username = username.strip().lower()
 
@@ -211,9 +294,7 @@ def create_account(full_name, username, password):
     password_hash, salt = hash_password(password)
 
     try:
-
         with get_connection() as conn:
-
             conn.execute(
                 """
                 INSERT INTO users (
@@ -233,20 +314,16 @@ def create_account(full_name, username, password):
                     datetime.now().isoformat(timespec="seconds")
                 )
             )
-
         return True, "Your account has been created."
 
     except sqlite3.IntegrityError:
-
         return False, "That username is already in use."
 
 
 def authenticate_user(username, password):
-
     username = username.strip().lower()
 
     with get_connection() as conn:
-
         user = conn.execute(
             "SELECT * FROM users WHERE username = ?",
             (username,)
@@ -255,12 +332,7 @@ def authenticate_user(username, password):
     if user is None:
         return None
 
-    if verify_password(
-        password,
-        user["password_hash"],
-        user["password_salt"]
-    ):
-
+    if verify_password(password, user["password_hash"], user["password_salt"]):
         return {
             "id": user["id"],
             "full_name": user["full_name"],
@@ -271,21 +343,19 @@ def authenticate_user(username, password):
 
 
 # ============================================================
-# 6. ACTIVITY HISTORY
+# 6. PERSISTENT ACTIVITY, EXPORTS & DATA RETENTION
 # ============================================================
 
 def log_activity(filename, file_type, text):
-
     if st.session_state.get("demo_mode"):
         return
 
     username = st.session_state.get("username")
-
     if not username:
         return
 
+    clean_text = text or ""
     with get_connection() as conn:
-
         conn.execute(
             """
             INSERT INTO activity (
@@ -294,36 +364,38 @@ def log_activity(filename, file_type, text):
                 file_type,
                 word_count,
                 character_count,
+                extracted_text,
                 status,
                 created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 username,
                 filename,
                 file_type,
-                len(text.split()),
-                len(text),
+                len(clean_text.split()),
+                len(clean_text),
+                clean_text,
                 "Completed",
                 datetime.now().isoformat(timespec="seconds")
             )
         )
 
 
-def get_activity():
-
+def get_activity_records():
     if st.session_state.get("demo_mode"):
-        return pd.DataFrame()
+        return []
 
     username = st.session_state.get("username")
+    if not username:
+        return []
 
     with get_connection() as conn:
-
         rows = conn.execute(
             """
-            SELECT filename, file_type, word_count,
-                   character_count, status, created_at
+            SELECT id, filename, file_type, word_count,
+                   character_count, extracted_text, status, created_at
             FROM activity
             WHERE username = ?
             ORDER BY id DESC
@@ -331,24 +403,153 @@ def get_activity():
             (username,)
         ).fetchall()
 
-    return pd.DataFrame([
-        dict(row) for row in rows
-    ])
+    return [dict(row) for row in rows]
 
 
-def delete_activity():
+def get_activity():
+    records = get_activity_records()
+    if not records:
+        return pd.DataFrame()
 
+    summary_rows = [
+        {
+            "ID": r["id"],
+            "Filename": r["filename"],
+            "Type": r["file_type"],
+            "Words": r["word_count"],
+            "Characters": r["character_count"],
+            "Status": r["status"],
+            "Timestamp": r["created_at"],
+        }
+        for r in records
+    ]
+    return pd.DataFrame(summary_rows)
+
+
+def delete_activity_item(record_id):
     if st.session_state.get("demo_mode"):
         return
 
     username = st.session_state.get("username")
+    if not username:
+        return
 
     with get_connection() as conn:
+        conn.execute(
+            "DELETE FROM activity WHERE id = ? AND username = ?",
+            (int(record_id), username)
+        )
 
+
+def delete_activity():
+    if st.session_state.get("demo_mode"):
+        return
+
+    username = st.session_state.get("username")
+    if not username:
+        return
+
+    with get_connection() as conn:
         conn.execute(
             "DELETE FROM activity WHERE username = ?",
             (username,)
         )
+
+
+def build_excel_export_bytes(records_override=None):
+    records = records_override if records_override is not None else get_activity_records()
+    summary_df = pd.DataFrame([
+        {
+            "Record_ID": r["id"],
+            "Account_Username": st.session_state.get("username"),
+            "Account_Name": st.session_state.get("full_name"),
+            "Filename": r["filename"],
+            "File_Type": r["file_type"],
+            "Word_Count": r["word_count"],
+            "Character_Count": r["character_count"],
+            "Status": r["status"],
+            "Created_At": r["created_at"],
+        }
+        for r in records
+    ])
+
+    texts_df = pd.DataFrame([
+        {
+            "Record_ID": r["id"],
+            "Filename": r["filename"],
+            "Created_At": r["created_at"],
+            "Extracted_Text": r["extracted_text"],
+        }
+        for r in records
+    ])
+
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        summary_df.to_excel(writer, index=False, sheet_name="Activity_Log")
+        texts_df.to_excel(writer, index=False, sheet_name="Saved_Texts")
+    return output.getvalue()
+
+
+def _sanitize_pdf_text(value: str) -> str:
+    text = str(value or "")
+    replacements = {
+        "\u2014": "-",
+        "\u2013": "-",
+        "\u2018": "'",
+        "\u2019": "'",
+        "\u201c": '"',
+        "\u201d": '"',
+        "\u2022": "*",
+        "\u2026": "...",
+    }
+    for src, dst in replacements.items():
+        text = text.replace(src, dst)
+    return text.encode("latin-1", errors="replace").decode("latin-1")
+
+
+def build_pdf_report_bytes(records: list[dict]) -> bytes:
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+
+    pdf.set_fill_color(15, 41, 74)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Helvetica", "B", 15)
+    pdf.cell(0, 12, _sanitize_pdf_text("NaijaSight Portal - Extraction & Activity Report"), ln=True, fill=True)
+
+    pdf.set_text_color(30, 41, 59)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.ln(3)
+    user_label = f"{st.session_state.get('full_name', '')} (@{st.session_state.get('username', '')})"
+    generated_stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    pdf.cell(0, 6, _sanitize_pdf_text(f"Account: {user_label}   |   Generated: {generated_stamp}"), ln=True)
+    pdf.cell(0, 6, _sanitize_pdf_text(f"Records Included: {len(records)}"), ln=True)
+    pdf.ln(4)
+
+    for idx, rec in enumerate(records, start=1):
+        pdf.set_draw_color(203, 213, 225)
+        pdf.set_fill_color(241, 245, 249)
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.set_text_color(15, 41, 74)
+        title_line = (
+            f"{idx}. {rec['filename']}  [{rec['file_type'] or 'file'}]  "
+            f"| {rec['word_count']} words | {rec['created_at']}"
+        )
+        pdf.multi_cell(0, 7, _sanitize_pdf_text(title_line), border=1, fill=True)
+
+        body = (rec.get("extracted_text") or "").strip()
+        if not body:
+            body = "(No text content stored for this record.)"
+        elif len(body) > 2500:
+            body = body[:2500] + "\n... [Truncated in PDF preview; full text included in TXT/Excel export]"
+
+        pdf.set_font("Helvetica", "", 10)
+        pdf.set_text_color(15, 23, 42)
+        pdf.multi_cell(0, 5.5, _sanitize_pdf_text(body), border="LRB")
+        pdf.ln(4)
+
+    raw_out = pdf.output()
+    return bytes(raw_out) if isinstance(raw_out, (bytes, bytearray)) else raw_out.encode("latin-1")
 
 
 # ============================================================
@@ -370,37 +571,29 @@ defaults = {
     "last_uncertain_words": [],
 
     "editable_result": "",
-
-    "auth_page": "login"
 }
 
 for key, value in defaults.items():
-
     if key not in st.session_state:
         st.session_state[key] = value
 
 
 def clear_current_result():
-
     st.session_state.extracted_text = ""
     st.session_state.current_filename = ""
     st.session_state.current_file_type = ""
-
     st.session_state.last_ocr_confidence = None
     st.session_state.last_uncertain_words = []
-
     st.session_state.editable_result = ""
 
 
 def logout():
-
     st.session_state.authenticated = False
     st.session_state.username = None
     st.session_state.full_name = None
     st.session_state.demo_mode = False
-
+    st.session_state.nav_page = "Home"
     clear_current_result()
-
     st.rerun()
 
 
@@ -410,11 +603,7 @@ def logout():
 
 @st.cache_resource(show_spinner="Loading text recognition engine...")
 def load_ocr_reader():
-
-    return easyocr.Reader(
-        ["en"],
-        gpu=False
-    )
+    return easyocr.Reader(["en"], gpu=False)
 
 
 # ============================================================
@@ -422,22 +611,18 @@ def load_ocr_reader():
 # ============================================================
 
 def check_file_size(uploaded_file):
-
     if uploaded_file.size > MAX_FILE_SIZE_BYTES:
-
         raise ValueError(
             f"This file exceeds the {MAX_FILE_SIZE_MB} MB upload limit."
         )
-
     return uploaded_file.getvalue()
 
 
 # ============================================================
-# 10. IMAGE ENHANCEMENT
+# 10. IMAGE ENHANCEMENT & LAYOUT GROUPING
 # ============================================================
 
 def prepare_image(image):
-    """Correct orientation and validate dimensions without damaging text."""
     image = ImageOps.exif_transpose(image)
     if image.width * image.height > MAX_IMAGE_PIXELS:
         raise ValueError("Image is too large to process safely.")
@@ -445,11 +630,6 @@ def prepare_image(image):
 
 
 def crop_main_document(image):
-    """Apply a conservative crop for wide desktop screenshots.
-
-    This is only an approximation, not document-boundary detection. Users
-    should compare it with Read Entire Image because a crop can omit content.
-    """
     image = prepare_image(image)
     width, height = image.size
     if width / max(height, 1) >= 1.25 and width >= 1000:
@@ -463,11 +643,9 @@ def crop_main_document(image):
 
 
 def enhance_for_ocr(image):
-    """Create a separate high-contrast copy while preserving the source image."""
     image = prepare_image(image)
     width, height = image.size
 
-    # Enlarge small images so printed characters occupy more pixels.
     longest_side = max(width, height)
     if longest_side < 1800:
         scale = min(1.6, 1800 / max(longest_side, 1))
@@ -484,7 +662,6 @@ def enhance_for_ocr(image):
 
 
 def group_ocr_results(results):
-    """Group detected text boxes into visual lines, then read left to right."""
     items = []
     heights = []
     for box, detected_text, confidence in results:
@@ -534,7 +711,6 @@ def group_ocr_results(results):
 
 
 def recognize_image(image, mode="Read Entire Image", quality_mode="Standard"):
-    """Extract text using the selected reading area and image preparation."""
     prepared = prepare_image(image)
 
     if mode == "Read Main Document":
@@ -544,13 +720,6 @@ def recognize_image(image, mode="Read Entire Image", quality_mode="Standard"):
         prepared = enhance_for_ocr(prepared)
 
     reader = load_ocr_reader()
-    # Performance-focused OCR settings:
-    # - greedy decoding is much faster than beamsearch on CPU.
-    # - automatic rotation testing runs OCR several extra times and is
-    #   expensive on Streamlit Cloud, so users should rotate sideways photos
-    #   before uploading them.
-    # - a smaller canvas reduces CPU work while retaining useful resolution
-    #   for ordinary document photos and screenshots.
     results = reader.readtext(
         np.array(prepared),
         detail=1,
@@ -589,298 +758,134 @@ def image_to_text(image, mode="Read Entire Image", quality_mode="Standard"):
 
 
 # ============================================================
-# 12. IMAGE PROCESSING
+# 12 - 20. DOCUMENT FORMAT PROCESSORS
 # ============================================================
 
 def process_image(uploaded_file, mode="Read Entire Image", quality_mode="Standard"):
-
     file_bytes = check_file_size(uploaded_file)
-
-    image = Image.open(
-        io.BytesIO(file_bytes)
-    )
-
+    image = Image.open(io.BytesIO(file_bytes))
     return image_to_text(image, mode=mode, quality_mode=quality_mode)
 
 
-# ============================================================
-# 13. PDF PROCESSING
-# ============================================================
-
 def process_pdf(uploaded_file, quality_mode="Standard"):
-
     file_bytes = check_file_size(uploaded_file)
-
-    document = fitz.open(
-        stream=file_bytes,
-        filetype="pdf"
-    )
+    document = fitz.open(stream=file_bytes, filetype="pdf")
 
     if document.page_count > MAX_PDF_PAGES:
-
         document.close()
-
-        raise ValueError(
-            f"This PDF contains more than {MAX_PDF_PAGES} pages."
-        )
+        raise ValueError(f"This PDF contains more than {MAX_PDF_PAGES} pages.")
 
     extracted_pages = []
-
     ocr_confidences = []
     all_uncertain_words = []
-
     progress = st.progress(0)
 
-    for page_number, page in enumerate(document):
+    try:
+        for page_number, page in enumerate(document):
+            page_text = page.get_text().strip()
 
-        page_text = page.get_text().strip()
+            if len(page_text) < 15:
+                pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5), alpha=False)
+                image = Image.open(io.BytesIO(pix.tobytes("png")))
+                ocr_result = recognize_image(image, quality_mode=quality_mode)
+                page_text = ocr_result["text"]
+                ocr_confidences.append(ocr_result["confidence"])
+                all_uncertain_words.extend(ocr_result["uncertain_words"])
 
-        # If the PDF page has little or no selectable text,
-        # convert it into an image and use OCR.
-        if len(page_text) < 15:
-
-            pix = page.get_pixmap(
-                matrix=fitz.Matrix(1.5, 1.5),
-                alpha=False
-            )
-
-            image = Image.open(
-                io.BytesIO(
-                    pix.tobytes("png")
-                )
-            )
-
-            ocr_result = recognize_image(image, quality_mode=quality_mode)
-
-            page_text = ocr_result["text"]
-
-            ocr_confidences.append(
-                ocr_result["confidence"]
-            )
-
-            all_uncertain_words.extend(
-                ocr_result["uncertain_words"]
-            )
-
-        extracted_pages.append(
-            f"PAGE {page_number + 1}\n{page_text}"
-        )
-
-        progress.progress(
-            (page_number + 1) / document.page_count
-        )
-
-    document.close()
-
-    progress.empty()
+            extracted_pages.append(f"PAGE {page_number + 1}\n{page_text}")
+            progress.progress((page_number + 1) / document.page_count)
+    finally:
+        document.close()
+        progress.empty()
 
     if ocr_confidences:
-
         st.session_state.last_ocr_confidence = round(
-            sum(ocr_confidences) / len(ocr_confidences),
-            1
+            sum(ocr_confidences) / len(ocr_confidences), 1
         )
+        st.session_state.last_uncertain_words = all_uncertain_words
 
-        st.session_state.last_uncertain_words = (
-            all_uncertain_words
-        )
+    return "\n\n".join(extracted_pages).strip()
 
-    return "\n\n".join(
-        extracted_pages
-    ).strip()
-
-
-# ============================================================
-# 14. WORD DOCUMENT PROCESSING
-# ============================================================
 
 def process_docx(uploaded_file):
-
     file_bytes = check_file_size(uploaded_file)
-
-    document = Document(
-        io.BytesIO(file_bytes)
-    )
-
-    paragraphs = []
-
-    for paragraph in document.paragraphs:
-
-        if paragraph.text.strip():
-
-            paragraphs.append(
-                paragraph.text.strip()
-            )
+    document = Document(io.BytesIO(file_bytes))
+    paragraphs = [p.text.strip() for p in document.paragraphs if p.text.strip()]
 
     for table in document.tables:
-
         for row in table.rows:
-
-            row_text = [
-                cell.text.strip()
-                for cell in row.cells
-                if cell.text.strip()
-            ]
-
+            row_text = [cell.text.strip() for cell in row.cells if cell.text.strip()]
             if row_text:
-
-                paragraphs.append(
-                    " | ".join(row_text)
-                )
+                paragraphs.append(" | ".join(row_text))
 
     return "\n".join(paragraphs).strip()
 
 
-# ============================================================
-# 15. POWERPOINT PROCESSING
-# ============================================================
-
 def process_pptx(uploaded_file):
-
     file_bytes = check_file_size(uploaded_file)
-
-    presentation = Presentation(
-        io.BytesIO(file_bytes)
-    )
-
+    presentation = Presentation(io.BytesIO(file_bytes))
     slides_text = []
 
     for index, slide in enumerate(presentation.slides):
-
         slide_parts = []
-
         for shape in slide.shapes:
-
             if hasattr(shape, "text") and shape.text.strip():
-
-                slide_parts.append(
-                    shape.text.strip()
-                )
-
-        slides_text.append(
-            f"SLIDE {index + 1}\n"
-            + "\n".join(slide_parts)
-        )
+                slide_parts.append(shape.text.strip())
+            if shape.has_table:
+                for row in shape.table.rows:
+                    row_vals = [c.text.strip() for c in row.cells if c.text.strip()]
+                    if row_vals:
+                        slide_parts.append(" | ".join(row_vals))
+        slides_text.append(f"SLIDE {index + 1}\n" + "\n".join(slide_parts))
 
     return "\n\n".join(slides_text).strip()
 
 
-# ============================================================
-# 16. EXCEL PROCESSING
-# ============================================================
-
 def process_xlsx(uploaded_file):
-
     file_bytes = check_file_size(uploaded_file)
-
-    workbook = pd.ExcelFile(
-        io.BytesIO(file_bytes)
-    )
-
+    workbook = pd.ExcelFile(io.BytesIO(file_bytes))
     output = []
 
     for sheet_name in workbook.sheet_names:
-
-        dataframe = pd.read_excel(
-            workbook,
-            sheet_name=sheet_name
-        )
-
+        dataframe = pd.read_excel(workbook, sheet_name=sheet_name)
         output.append(
-            f"SHEET: {sheet_name}\n"
-            + dataframe.fillna("").to_string(index=False)
+            f"SHEET: {sheet_name}\n" + dataframe.fillna("").to_string(index=False)
         )
 
     return "\n\n".join(output).strip()
 
 
-# ============================================================
-# 17. CSV PROCESSING
-# ============================================================
-
 def process_csv(uploaded_file):
-
     file_bytes = check_file_size(uploaded_file)
-
-    dataframe = pd.read_csv(
-        io.BytesIO(file_bytes)
-    )
-
+    dataframe = pd.read_csv(io.BytesIO(file_bytes))
     return dataframe.fillna("").to_string(index=False)
 
 
-# ============================================================
-# 18. TEXT FILE PROCESSING
-# ============================================================
-
 def process_txt(uploaded_file):
-
     file_bytes = check_file_size(uploaded_file)
-
     try:
-
-        return file_bytes.decode(
-            "utf-8"
-        ).strip()
-
+        return file_bytes.decode("utf-8").strip()
     except UnicodeDecodeError:
+        return file_bytes.decode("latin-1", errors="replace").strip()
 
-        return file_bytes.decode(
-            "latin-1",
-            errors="replace"
-        ).strip()
-
-
-# ============================================================
-# 19. RTF PROCESSING
-# ============================================================
 
 def process_rtf(uploaded_file):
-
     file_bytes = check_file_size(uploaded_file)
+    raw_text = file_bytes.decode("utf-8", errors="replace")
+    return rtf_to_text(raw_text).strip()
 
-    raw_text = file_bytes.decode(
-        "utf-8",
-        errors="replace"
-    )
-
-    return rtf_to_text(
-        raw_text
-    ).strip()
-
-
-# ============================================================
-# 20. EPUB PROCESSING
-# ============================================================
 
 def process_epub(uploaded_file):
-
     file_bytes = check_file_size(uploaded_file)
-
-    book = epub.read_epub(
-        io.BytesIO(file_bytes)
-    )
-
+    book = epub.read_epub(io.BytesIO(file_bytes))
     chapters = []
 
     for item in book.get_items():
-
         if item.get_type() == ITEM_DOCUMENT:
-
-            soup = BeautifulSoup(
-                item.get_content(),
-                "html.parser"
-            )
-
-            chapter_text = soup.get_text(
-                separator="\n"
-            ).strip()
-
+            soup = BeautifulSoup(item.get_content(), "html.parser")
+            chapter_text = soup.get_text(separator="\n").strip()
             if chapter_text:
-
-                chapters.append(
-                    chapter_text
-                )
+                chapters.append(chapter_text)
 
     return "\n\n".join(chapters).strip()
 
@@ -894,10 +899,7 @@ def process_uploaded_document(
     image_mode="Read Entire Image",
     quality_mode="Standard"
 ):
-
-    extension = Path(
-        uploaded_file.name
-    ).suffix.lower()
+    extension = Path(uploaded_file.name).suffix.lower()
 
     processors = {
         ".png": process_image,
@@ -907,7 +909,6 @@ def process_uploaded_document(
         ".bmp": process_image,
         ".tif": process_image,
         ".tiff": process_image,
-
         ".pdf": process_pdf,
         ".docx": process_docx,
         ".pptx": process_pptx,
@@ -919,12 +920,8 @@ def process_uploaded_document(
     }
 
     processor = processors.get(extension)
-
     if processor is None:
-
-        raise ValueError(
-            f"The file format {extension} is not supported."
-        )
+        raise ValueError(f"The file format {extension} is not supported.")
 
     if extension in {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}:
         return processor(uploaded_file, mode=image_mode, quality_mode=quality_mode)
@@ -934,7 +931,7 @@ def process_uploaded_document(
 
 
 # ============================================================
-# 22. TEXT TO SPEECH
+# 22. TEXT TO SPEECH & OFFLINE READER
 # ============================================================
 
 def create_speech(text, slow=False):
@@ -950,7 +947,6 @@ def create_speech(text, slow=False):
 
 
 def split_text_for_speech(text, max_chars=4000):
-    """Split long text into paragraph/sentence-sized sections."""
     text = (text or "").strip()
     if not text:
         return []
@@ -994,7 +990,6 @@ def split_text_for_speech(text, max_chars=4000):
 
 
 def render_speech_controls(text, key_prefix):
-    """Consent-based speech controls for short and long text."""
     sections = split_text_for_speech(text)
     if not sections:
         st.info("There is no text available to read aloud yet.")
@@ -1014,8 +1009,7 @@ def render_speech_controls(text, key_prefix):
         "Speech speed",
         ["Normal", "Slower"],
         horizontal=True,
-        key=f"{key_prefix}_speech_speed",
-        help="Slower uses Google text-to-speech's slow speech setting."
+        key=f"{key_prefix}_speech_speed"
     )
     with st.expander("Preview selected reading part"):
         st.write(sections[selected_part])
@@ -1049,14 +1043,8 @@ def render_speech_controls(text, key_prefix):
             st.error(f"Could not create speech: {error}")
 
 
-# ============================================================
-# 22B. OFFLINE READER EXPORT
-# ============================================================
-
 def build_offline_reader_html(text, document_title="NaijaSight Offline Reader"):
-    """Build a self-contained HTML reader that can be saved and opened offline."""
     safe_title = html.escape(str(document_title or "NaijaSight Offline Reader"))
-    # Prevent user text from terminating the embedded script element.
     embedded_text = json.dumps(str(text or ""), ensure_ascii=False)
     embedded_text = (
         embedded_text.replace("<", "\\u003c")
@@ -1098,14 +1086,13 @@ body.high-contrast button.primary {{ background:#ffdf00; color:#000; }}
   .controls button, .controls select {{ flex:1 1 42%; }}
   #readerText {{ font-size:1.12rem; }}
 }}
-@media (prefers-reduced-motion: reduce) {{ * {{ scroll-behavior:auto !important; }} }}
 </style>
 </head>
 <body>
 <header><h1>NaijaSight — Offline Reader</h1></header>
 <main>
   <section class="panel" aria-label="Reading controls">
-    <p class="small">This file contains your saved text. After downloading it, you can reopen it without an internet connection. Read-aloud uses voices available on this device and browser.</p>
+    <p class="small">This file contains your saved text. After downloading it, you can reopen it without an internet connection.</p>
     <div class="controls">
       <button type="button" id="smaller">A− Smaller text</button>
       <button type="button" id="larger">A+ Larger text</button>
@@ -1125,7 +1112,6 @@ body.high-contrast button.primary {{ background:#ffdf00; color:#000; }}
     <h2 id="sectionHeading">Document text</h2>
     <article id="readerText" tabindex="0"></article>
   </section>
-  <p class="small">Privacy: this standalone file does not send its saved text to NaijaSight. Browser speech availability and offline operation depend on the device's installed voices and browser.</p>
 </main>
 <script>
 const originalText = {embedded_text};
@@ -1156,17 +1142,7 @@ function splitIntoParts(text) {{
       if (current && current.length + sentence.length + 1 > 3000) {{
         output.push(current); current = '';
       }}
-      if (sentence.length > 3000) {{
-        const words = sentence.split(/\\s+/);
-        for (const word of words) {{
-          if (current && current.length + word.length + 1 > 3000) {{
-            output.push(current); current = '';
-          }}
-          current = current ? current + ' ' + word : word;
-        }}
-      }} else {{
-        current = current ? current + ' ' + sentence : sentence;
-      }}
+      current = current ? current + ' ' + sentence : sentence;
     }}
     if (current) {{ output.push(current); current = ''; }}
   }}
@@ -1206,14 +1182,13 @@ document.getElementById('contrast').addEventListener('click', () => {{
 }});
 document.getElementById('read').addEventListener('click', () => {{
   if (!('speechSynthesis' in window) || !('SpeechSynthesisUtterance' in window)) {{
-    statusLine.textContent = 'Read-aloud is not supported by this browser. You can still read the saved text.';
+    statusLine.textContent = 'Read-aloud is not supported by this browser.';
     return;
   }}
   stopSpeech();
   const utterance = new SpeechSynthesisUtterance(parts[Number(partSelect.value || 0)]);
   utterance.onstart = () => statusLine.textContent = 'Reading section aloud.';
   utterance.onend = () => statusLine.textContent = 'Finished reading this section.';
-  utterance.onerror = () => statusLine.textContent = 'The device could not read this section aloud. Try another browser or device voice.';
   window.speechSynthesis.speak(utterance);
 }});
 document.getElementById('pause').addEventListener('click', () => {{
@@ -1235,213 +1210,161 @@ document.getElementById('stop').addEventListener('click', () => {{
 # ============================================================
 
 def transcribe_audio(audio_file):
-
     if not SPEECH_RECOGNITION_AVAILABLE:
-
-        raise RuntimeError(
-            "Speech recognition is not installed."
-        )
+        raise RuntimeError("Speech recognition is not installed.")
 
     recognizer = sr.Recognizer()
-
     audio_bytes = audio_file.getvalue()
 
-    with sr.AudioFile(
-        io.BytesIO(audio_bytes)
-    ) as source:
-
+    with sr.AudioFile(io.BytesIO(audio_bytes)) as source:
         audio_data = recognizer.record(source)
 
-    return recognizer.recognize_google(
-        audio_data,
-        language="en-NG"
-    )
+    return recognizer.recognize_google(audio_data, language="en-NG")
 
 
 # ============================================================
-# 24. AUTHENTICATION PAGE
+# 24. AUTHENTICATION PORTAL
 # ============================================================
 
 def render_auth_portal():
-
-    st.title("👁️ NaijaSight")
-
     st.markdown(
         """
-        <p class="app-subtitle">
-        A reading assistant for people who are blind
-        or have low vision.
-        </p>
+        <div class="portal-banner">
+            <div>
+                <h1>👁️ NaijaSight Portal</h1>
+                <p>Accessible Document Intelligence, OCR & Voice Suite</p>
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <span class="portal-tag">SQLite + Excel + PDF</span>
+                <span class="portal-tag">Up to 500 MB</span>
+            </div>
+        </div>
         """,
         unsafe_allow_html=True
     )
 
-    login_tab, register_tab = st.tabs(
-        ["Log in", "Create account"]
-    )
+    col_left, col_right = st.columns([1.15, 1], gap="large")
 
-    with login_tab:
+    with col_left:
+        st.subheader("Built for Clarity, Speed & Accessibility")
+        st.write(
+            "NaijaSight empowers blind, low-vision, and busy users to read documents, "
+            "scan printed pages, generate speech, and retain a searchable database record of their work."
+        )
+        st.markdown(
+            """
+            - **Read a document:** Extract text from PDF, Word, Excel, CSV, PowerPoint, EPUB, RTF, TXT, and images
+            - **Scan with camera:** Capture printed sheets or signs with layout-aware OCR and enhancement modes
+            - **Listen to text:** Break long documents into parts for smooth audio generation and offline HTML reading
+            - **Voice tools:** Transcribe spoken voice recordings and store them in your account history
+            """
+        )
 
-        with st.form("login_form"):
+        st.divider()
+        if st.button("⚡ Quick Judge / Guest Demo Access", type="primary", use_container_width=True):
+            st.session_state.authenticated = True
+            st.session_state.username = "demo"
+            st.session_state.full_name = "Demo User"
+            st.session_state.demo_mode = True
+            st.session_state.nav_page = "Home"
+            st.rerun()
 
-            st.subheader("Welcome back")
+    with col_right:
+        with st.container(border=True):
+            login_tab, register_tab = st.tabs(["Log in", "Create account"])
 
-            username = st.text_input(
-                "Username"
-            )
+            with login_tab:
+                with st.form("login_form"):
+                    st.subheader("Portal Sign In")
+                    username = st.text_input("Username")
+                    password = st.text_input("Password", type="password")
+                    submitted = st.form_submit_button("Log in", type="primary", use_container_width=True)
 
-            password = st.text_input(
-                "Password",
-                type="password"
-            )
+                    if submitted:
+                        user = authenticate_user(username, password)
+                        if user:
+                            st.session_state.authenticated = True
+                            st.session_state.username = user["username"]
+                            st.session_state.full_name = user["full_name"]
+                            st.session_state.demo_mode = False
+                            st.session_state.nav_page = "Home"
+                            st.rerun()
+                        else:
+                            st.error("The username or password is incorrect.")
 
-            submitted = st.form_submit_button(
-                "Log in",
-                use_container_width=True
-            )
+            with register_tab:
+                with st.form("register_form"):
+                    st.subheader("Register Portal Account")
+                    full_name = st.text_input("Full name")
+                    new_username = st.text_input("Choose a username")
+                    new_password = st.text_input("Create a password (min 8 chars)", type="password")
+                    confirm_password = st.text_input("Confirm password", type="password")
+                    submitted = st.form_submit_button("Create account", use_container_width=True)
 
-            if submitted:
-
-                user = authenticate_user(
-                    username,
-                    password
-                )
-
-                if user:
-
-                    st.session_state.authenticated = True
-                    st.session_state.username = user["username"]
-                    st.session_state.full_name = user["full_name"]
-                    st.session_state.demo_mode = False
-
-                    st.rerun()
-
-                else:
-
-                    st.error(
-                        "The username or password is incorrect."
-                    )
-
-    with register_tab:
-
-        with st.form("register_form"):
-
-            st.subheader("Create your account")
-
-            full_name = st.text_input(
-                "Full name"
-            )
-
-            new_username = st.text_input(
-                "Choose a username"
-            )
-
-            new_password = st.text_input(
-                "Create a password",
-                type="password"
-            )
-
-            confirm_password = st.text_input(
-                "Confirm password",
-                type="password"
-            )
-
-            submitted = st.form_submit_button(
-                "Create account",
-                use_container_width=True
-            )
-
-            if submitted:
-
-                if new_password != confirm_password:
-
-                    st.error(
-                        "Your passwords do not match."
-                    )
-
-                else:
-
-                    success, message = create_account(
-                        full_name,
-                        new_username,
-                        new_password
-                    )
-
-                    if success:
-
-                        st.success(message)
-                        st.info("You can now log in.")
-
-                    else:
-
-                        st.error(message)
-
-    st.divider()
-
-    st.caption(
-        "You can explore the application using demonstration mode. "
-        "Activity is not saved in this mode."
-    )
-
-    if st.button(
-        "Continue with demo",
-        use_container_width=True
-    ):
-
-        st.session_state.authenticated = True
-        st.session_state.username = "demo"
-        st.session_state.full_name = "Demo User"
-        st.session_state.demo_mode = True
-
-        st.rerun()
+                    if submitted:
+                        if new_password != confirm_password:
+                            st.error("Your passwords do not match.")
+                        else:
+                            success, message = create_account(full_name, new_username, new_password)
+                            if success:
+                                st.success(message)
+                                st.info("You can now log in.")
+                            else:
+                                st.error(message)
 
 
 # ============================================================
-# 25. SIDEBAR
+# 25. SIDEBAR & PORTAL HEADER
 # ============================================================
 
 def render_sidebar():
-
     with st.sidebar:
-
         st.title("👁️ NaijaSight")
-
-        st.caption("Reading assistant")
-
+        st.caption("Portal Navigation")
         st.divider()
 
-        st.write(
-            f"Signed in as **{st.session_state.full_name}**"
-        )
-
+        st.write(f"Signed in as **{st.session_state.full_name}**")
         if st.session_state.demo_mode:
-
-            st.info("Demonstration mode")
+            st.info("Demonstration mode (unsaved session)")
 
         pages = [
-            "Home", "Read a document", "Scan with camera",
-            "Listen to text", "Voice tools", "Activity history"
+            "Home",
+            "Read a document",
+            "Scan with camera",
+            "Listen to text",
+            "Voice tools",
+            "Activity history"
         ]
-        page = st.radio(
-            "Navigation",
-            pages,
-            key="nav_page"
-        )
+        page = st.radio("Select Module", pages, key="nav_page")
 
         st.divider()
+        st.caption(f"Max upload size: {MAX_FILE_SIZE_MB} MB")
 
-        st.caption(
-            f"Maximum upload size: {MAX_FILE_SIZE_MB} MB"
-        )
-
-        if st.button(
-            "Log out",
-            use_container_width=True
-        ):
-
+        if st.button("Log out", use_container_width=True):
             logout()
 
     return page
+
+
+def render_portal_header(active_page):
+    records = get_activity_records() if not st.session_state.demo_mode else []
+    total_words = sum(r["word_count"] for r in records)
+
+    st.markdown(
+        f"""
+        <div class="portal-banner">
+            <div>
+                <h2>👁️ NaijaSight Portal — {html.escape(active_page)}</h2>
+                <p>Welcome, <strong>{html.escape(st.session_state.full_name or '')}</strong> (@{html.escape(st.session_state.username or '')})</p>
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <span class="portal-tag">Saved Records: {len(records)}</span>
+                <span class="portal-tag">Words Processed: {total_words:,}</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 
 # ============================================================
@@ -1449,24 +1372,18 @@ def render_sidebar():
 # ============================================================
 
 def go_to_page(page):
-    """Change the navigation radio value before Streamlit reruns the app."""
     st.session_state["nav_page"] = page
 
 
 def render_home():
-    st.title("Welcome to NaijaSight")
-    st.markdown(
-        "<p class='app-subtitle'>A simple reading assistant for people who are blind or have low vision.</p>",
-        unsafe_allow_html=True,
-    )
-    st.subheader("What would you like to do?")
-    st.caption("Choose an action to open its workspace.")
+    st.subheader("Portal Category Hub")
+    st.caption("Select a category below to open its dedicated workspace.")
 
     cards = [
-        ("📄", "Read a document", "Extract text from PDF, Word, PowerPoint, Excel, EPUB and more.", "Read a document"),
-        ("📷", "Scan an image", "Upload an image or use your camera to recognise printed text.", "Scan with camera"),
-        ("🔊", "Listen to text", "Paste text or listen to text you have already extracted.", "Listen to text"),
-        ("🎙️", "Voice tools", "Record speech and convert it into text.", "Voice tools"),
+        ("📄", "Read a document", "Extract text from PDF, Word, Excel, CSV, PowerPoint, EPUB, RTF, TXT, and images.", "Read a document"),
+        ("📷", "Scan with camera", "Capture printed pages or notices with your camera using Standard or Enhanced OCR.", "Scan with camera"),
+        ("🔊", "Listen to text", "Read extracted or pasted text aloud in clean sections and download an offline reader.", "Listen to text"),
+        ("🎙️", "Voice tools", "Record spoken instructions or notes and transcribe them into editable text.", "Voice tools"),
     ]
     columns = st.columns(2, gap="large")
     for index, (symbol, title, description, destination) in enumerate(cards):
@@ -1484,9 +1401,9 @@ def render_home():
                 )
 
     st.divider()
-    st.subheader("Getting started")
-    st.write("1. Choose a document or image.  2. Extract the text.  3. Review the result.  4. Listen to it or download it.")
-    st.info("For clearer recognition, keep the text in focus and avoid glare. Always check important names, dates and amounts.")
+    st.subheader("Quick Workflow")
+    st.write("1. Choose a category.  2. Upload or capture your input.  3. Review & edit the text.  4. Listen, export to Excel/PDF, or open offline.")
+    st.info("For clearest recognition, keep text upright and in focus. Always verify important names, dates, and figures.")
 
 
 # ============================================================
@@ -1494,77 +1411,35 @@ def render_home():
 # ============================================================
 
 def render_result_workspace():
-
     text = st.session_state.extracted_text
 
     if not text:
-
-        st.info(
-            "Your extracted text will appear here after processing."
-        )
-
+        st.info("Your extracted text will appear here after processing.")
         return
 
-    st.subheader("Extracted text")
+    st.subheader("Extracted Text Workspace")
     st.caption("OCR confidence is an estimate from detected text regions, not a guarantee that every word is correct.")
 
-    # OCR confidence display
-    confidence = st.session_state.get(
-        "last_ocr_confidence"
-    )
-
+    confidence = st.session_state.get("last_ocr_confidence")
     if confidence is not None:
-
-        st.metric(
-            "OCR confidence",
-            f"{confidence}%"
-        )
+        st.metric("OCR confidence", f"{confidence}%")
 
         if confidence < 60:
-
-            st.warning(
-                "The OCR engine is uncertain about some of the text. "
-                "Please review the result carefully."
-            )
-
+            st.warning("The OCR engine is uncertain about some text. Please review carefully.")
         elif confidence < 80:
-
-            st.info(
-                "Some parts of the text may need checking."
-            )
-
+            st.info("Some parts of the text may need checking.")
         else:
+            st.success("The OCR engine recognised the text with high confidence.")
 
-            st.success(
-                "The OCR engine recognised the text with relatively "
-                "high confidence."
-            )
-
-        uncertain = st.session_state.get(
-            "last_uncertain_words",
-            []
-        )
-
+        uncertain = st.session_state.get("last_uncertain_words", [])
         if uncertain:
-
-            with st.expander(
-                "Review uncertain text"
-            ):
-
+            with st.expander("Review uncertain words"):
                 for item in uncertain:
+                    st.write(f"**{item['text']}** — {item['confidence']}% confidence")
 
-                    st.write(
-                        f"**{item['text']}** — "
-                        f"{item['confidence']}% confidence"
-                    )
+    st.caption(f"{len(text.split())} words · {len(text)} characters")
 
-    st.caption(
-        f"{len(text.split())} words · {len(text)} characters"
-    )
-
-    # Keep the editor synchronised with newly extracted text.
     if st.session_state.get("editable_result") != text:
-
         st.session_state.editable_result = text
 
     edited_text = st.text_area(
@@ -1572,14 +1447,13 @@ def render_result_workspace():
         height=300,
         key="editable_result"
     )
-
     st.session_state.extracted_text = edited_text
 
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
 
     with col1:
         st.download_button(
-            "Download text",
+            "Download text (.TXT)",
             data=edited_text,
             file_name="naijasight_extracted_text.txt",
             mime="text/plain",
@@ -1592,20 +1466,17 @@ def render_result_workspace():
             st.session_state.get("current_filename") or "NaijaSight Offline Reader"
         )
         st.download_button(
-            "Download offline reader",
+            "Offline reader (.HTML)",
             data=offline_html.encode("utf-8"),
             file_name="naijasight_offline_reader.html",
             mime="text/html",
-            use_container_width=True,
-            help="Save this self-contained reader to your phone or computer and open it later without internet."
+            use_container_width=True
         )
 
-    if st.button(
-        "Clear result",
-        use_container_width=True
-    ):
-        clear_current_result()
-        st.rerun()
+    with col3:
+        if st.button("Clear result", use_container_width=True):
+            clear_current_result()
+            st.rerun()
 
     st.divider()
     st.subheader("Listen to the text")
@@ -1617,13 +1488,8 @@ def render_result_workspace():
 # ============================================================
 
 def render_document_reader():
-
-    st.title("Read a document")
-
-    st.write(
-        "Upload a document or image. NaijaSight will try to "
-        "extract its text."
-    )
+    st.subheader("Read a Document or Image")
+    st.write("Upload a document or image file. NaijaSight extracts clean text and logs it to your database.")
 
     uploaded_file = st.file_uploader(
         "Choose a file",
@@ -1640,53 +1506,29 @@ def render_document_reader():
     quality_mode = "Standard"
 
     if uploaded_file:
-
-        st.write(
-            f"Selected file: **{uploaded_file.name}**"
-        )
+        st.write(f"Selected file: **{uploaded_file.name}**")
         selected_extension = Path(uploaded_file.name).suffix.lower()
 
         if selected_extension in image_extensions:
             image_mode = st.radio(
-                "Choose how NaijaSight should read this image",
+                "Reading scope",
                 ["Read Entire Image", "Read Main Document"],
-                horizontal=True,
-                help="Read Entire Image includes all visible text. Read Main Document applies an approximate crop to wide desktop screenshots; it can miss content."
+                horizontal=True
             )
 
         if selected_extension in image_extensions or selected_extension == ".pdf":
             quality_mode = st.radio(
                 "OCR image preparation",
                 ["Standard", "Enhanced"],
-                horizontal=True,
-                help="Standard uses the original image. Enhanced creates a grayscale, higher-contrast and slightly enlarged copy. Enhanced may help faint text but can also make some images worse."
+                horizontal=True
             )
 
-        st.caption(
-            f"File size: {uploaded_file.size / (1024 * 1024):.2f} MB"
-        )
+        st.caption(f"File size: {uploaded_file.size / (1024 * 1024):.2f} MB")
 
-        if selected_extension in image_extensions:
-            st.info(
-                "For faster scanning, use a clear, upright image. "
-                "Rotate sideways photos before uploading. The faster OCR "
-                "settings avoid repeated rotation and beam-search passes."
-            )
-
-        if st.button(
-            "Extract text",
-            type="primary"
-        ):
-
+        if st.button("Extract text", type="primary"):
             clear_current_result()
-
             try:
-
-                with st.spinner(
-                    "Preparing the OCR engine and reading your image. "
-                    "The first scan after a server restart can take longer..."
-                ):
-
+                with st.spinner("Processing your document..."):
                     extracted_text = process_uploaded_document(
                         uploaded_file,
                         image_mode=image_mode,
@@ -1694,41 +1536,18 @@ def render_document_reader():
                     )
 
                 if extracted_text:
-
                     st.session_state.extracted_text = extracted_text
-
-                    st.session_state.current_filename = (
-                        uploaded_file.name
-                    )
-
-                    st.session_state.current_file_type = (
-                        Path(uploaded_file.name).suffix.lower()
-                    )
-
+                    st.session_state.current_filename = uploaded_file.name
+                    st.session_state.current_file_type = selected_extension
                     st.session_state.editable_result = extracted_text
 
-                    log_activity(
-                        uploaded_file.name,
-                        Path(uploaded_file.name).suffix.lower(),
-                        extracted_text
-                    )
-
-                    st.success(
-                        "Text extraction completed."
-                    )
-
+                    log_activity(uploaded_file.name, selected_extension, extracted_text)
+                    st.success("Text extraction completed and saved.")
                 else:
-
-                    st.warning(
-                        "No readable text was found. Try a clearer image "
-                        "or check whether the document contains text."
-                    )
+                    st.warning("No readable text was found in this file.")
 
             except Exception as error:
-
-                st.error(
-                    f"Something went wrong while reading the file: {error}"
-                )
+                st.error(f"Could not read the file: {error}")
 
     render_result_workspace()
 
@@ -1738,47 +1557,27 @@ def render_document_reader():
 # ============================================================
 
 def render_camera_scanner():
-
-    st.title("Scan with camera")
-
-    st.write(
-        "Take a picture of a page, notice, book or printed document."
-    )
+    st.subheader("Scan with Camera")
+    st.write("Take a clear picture of a printed page, textbook, receipt, or notice.")
 
     camera_mode = st.radio(
-        "Choose reading mode",
+        "Reading scope",
         ["Read Entire Image", "Read Main Document"],
-        horizontal=True,
+        horizontal=True
     )
     camera_quality = st.radio(
         "OCR image preparation",
         ["Standard", "Enhanced"],
-        horizontal=True,
-        help="Enhanced creates a grayscale, higher-contrast and slightly enlarged copy. Compare both methods if the result is unclear."
+        horizontal=True
     )
-    camera_image = st.camera_input(
-        "Take a picture"
-    )
+    camera_image = st.camera_input("Take a picture")
 
     if camera_image:
-
-        if st.button(
-            "Read this picture",
-            type="primary"
-        ):
-
+        if st.button("Read this picture", type="primary"):
             clear_current_result()
-
             try:
-
-                with st.spinner(
-                    "Reading the picture..."
-                ):
-
-                    image = Image.open(
-                        camera_image
-                    )
-
+                with st.spinner("Reading camera image..."):
+                    image = Image.open(camera_image)
                     extracted_text = image_to_text(
                         image,
                         mode=camera_mode,
@@ -1786,35 +1585,18 @@ def render_camera_scanner():
                     )
 
                 if extracted_text:
-
                     st.session_state.extracted_text = extracted_text
-
                     st.session_state.current_filename = "Camera scan"
                     st.session_state.current_file_type = "camera"
-
                     st.session_state.editable_result = extracted_text
 
-                    log_activity(
-                        "Camera scan",
-                        "camera",
-                        extracted_text
-                    )
-
-                    st.success(
-                        "Text extracted."
-                    )
-
+                    log_activity("Camera scan", "camera", extracted_text)
+                    st.success("Text extracted and saved.")
                 else:
-
-                    st.warning(
-                        "No text was detected. Try taking another picture."
-                    )
+                    st.warning("No text was detected. Try taking another picture.")
 
             except Exception as error:
-
-                st.error(
-                    f"Could not process the picture: {error}"
-                )
+                st.error(f"Could not process the picture: {error}")
 
     render_result_workspace()
 
@@ -1824,11 +1606,9 @@ def render_camera_scanner():
 # ============================================================
 
 def render_listen_page():
-    st.title("Listen to text")
-    st.write(
-        "Paste text below, or use text you have already extracted with NaijaSight. "
-        "Long text is divided into smaller reading parts."
-    )
+    st.subheader("Listen to Text")
+    st.write("Paste any text or load extracted text to generate speech in manageable parts.")
+
     initial_text = st.session_state.get("extracted_text", "")
     text_to_read = st.text_area(
         "Text to read aloud",
@@ -1844,204 +1624,203 @@ def render_listen_page():
 # ============================================================
 
 def render_voice_tools():
-
-    st.title("Voice tools")
-
-    st.write(
-        "Record a short voice message and convert it into text."
-    )
+    st.subheader("Voice Transcription Tools")
+    st.write("Record a short spoken message and convert it into text.")
 
     if not SPEECH_RECOGNITION_AVAILABLE:
-
-        st.error(
-            "The speech recognition package is not installed."
-        )
-
+        st.error("The speech recognition package is not installed.")
         return
 
     st.warning(
-        "Voice recognition sends your recording to Google's "
-        "speech recognition service. Avoid recording private "
-        "or sensitive information."
+        "Voice recognition sends your recording to Google's speech recognition service. "
+        "Avoid recording sensitive or private information."
     )
-
-    consent = st.checkbox(
-        "I agree to send my recording to Google for transcription."
-    )
-
-    audio_file = st.audio_input(
-        "Record your voice"
-    )
+    consent = st.checkbox("I agree to send my recording to Google for transcription.")
+    audio_file = st.audio_input("Record your voice")
 
     if audio_file:
-
-        st.audio(
-            audio_file
-        )
-
-        if st.button(
-            "Convert speech to text",
-            disabled=not consent,
-            type="primary"
-        ):
-
+        st.audio(audio_file)
+        if st.button("Convert speech to text", disabled=not consent, type="primary"):
             try:
-
-                with st.spinner(
-                    "Transcribing your recording..."
-                ):
-
-                    transcript = transcribe_audio(
-                        audio_file
-                    )
+                with st.spinner("Transcribing recording..."):
+                    transcript = transcribe_audio(audio_file)
 
                 st.session_state.extracted_text = transcript
-
                 st.session_state.current_filename = "Voice recording"
                 st.session_state.current_file_type = "audio"
-
                 st.session_state.editable_result = transcript
 
-                log_activity(
-                    "Voice recording",
-                    "audio",
-                    transcript
-                )
-
-                st.success(
-                    "Transcription completed."
-                )
-
+                log_activity("Voice recording", "audio", transcript)
+                st.success("Transcription completed and saved.")
             except Exception as error:
-
-                st.error(
-                    f"Could not transcribe the recording: {error}"
-                )
+                st.error(f"Could not transcribe recording: {error}")
 
     render_result_workspace()
 
 
 # ============================================================
-# 32. ACTIVITY HISTORY
+# 32. ACTIVITY HISTORY, SEARCH, EXPORTS & RETENTION
 # ============================================================
 
 def render_history():
-
-    st.title("Activity history")
+    st.subheader("Activity History, Stored Records & Exports")
 
     if st.session_state.demo_mode:
-
-        st.info(
-            "History is not saved in demonstration mode."
-        )
-
+        st.info("Sign in with a registered account to store and retain history across sessions.")
         return
 
-    history = get_activity()
-
-    if history.empty:
-
-        st.info(
-            "You have no saved activity yet."
-        )
-
+    records = get_activity_records()
+    if not records:
+        st.info("You have no saved activity records yet.")
         return
 
-    st.write(
-        "This page stores basic activity details. "
-        "It does not store the full text extracted from your files."
-    )
+    total_words = sum(r["word_count"] for r in records)
+    total_chars = sum(r["character_count"] for r in records)
 
-    st.dataframe(
-        history,
-        use_container_width=True,
-        hide_index=True
-    )
-
-    output = io.BytesIO()
-
-    with pd.ExcelWriter(
-        output,
-        engine="openpyxl"
-    ) as writer:
-
-        history.to_excel(
-            writer,
-            index=False,
-            sheet_name="Activity"
+    k1, k2, k3 = st.columns(3)
+    with k1:
+        st.markdown(
+            f'<div class="kpi-card"><div class="kpi-label">Saved Extractions</div><div class="kpi-value">{len(records)}</div></div>',
+            unsafe_allow_html=True
+        )
+    with k2:
+        st.markdown(
+            f'<div class="kpi-card"><div class="kpi-label">Total Words</div><div class="kpi-value">{total_words:,}</div></div>',
+            unsafe_allow_html=True
+        )
+    with k3:
+        st.markdown(
+            f'<div class="kpi-card"><div class="kpi-label">Total Characters</div><div class="kpi-value">{total_chars:,}</div></div>',
+            unsafe_allow_html=True
         )
 
-    st.download_button(
-        "Export history to Excel",
-        data=output.getvalue(),
-        file_name="naijasight_activity.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+    st.markdown("#### Search & Filter Retained Records")
+    f_col1, f_col2 = st.columns([2, 1])
+    with f_col1:
+        search_query = st.text_input(
+            "Search by filename or extracted text",
+            placeholder="e.g., lecture, camera, receipt, chapter 1..."
+        ).strip().lower()
+
+    available_types = sorted({(r["file_type"] or "unknown") for r in records})
+    with f_col2:
+        type_filter = st.selectbox(
+            "Filter by type",
+            options=["All Types"] + available_types
+        )
+
+    filtered_records = []
+    for r in records:
+        matches_type = (type_filter == "All Types") or ((r["file_type"] or "unknown") == type_filter)
+        haystack = f"{r['filename']} {r['file_type']} {r.get('extracted_text', '')}".lower()
+        matches_query = (not search_query) or (search_query in haystack)
+        if matches_type and matches_query:
+            filtered_records.append(r)
+
+    st.caption(f"Showing {len(filtered_records)} of {len(records)} saved record(s).")
+
+    if filtered_records:
+        filtered_df = pd.DataFrame([
+            {
+                "ID": r["id"],
+                "Filename": r["filename"],
+                "Type": r["file_type"],
+                "Words": r["word_count"],
+                "Characters": r["character_count"],
+                "Status": r["status"],
+                "Timestamp": r["created_at"],
+            }
+            for r in filtered_records
+        ])
+        st.dataframe(filtered_df, use_container_width=True, hide_index=True)
+
+        exp_col1, exp_col2 = st.columns(2)
+        with exp_col1:
+            st.download_button(
+                "📊 Export Database to Excel (.XLSX)",
+                data=build_excel_export_bytes(filtered_records),
+                file_name=f"naijasight_{st.session_state.username}_records.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                type="primary",
+                use_container_width=True
+            )
+        with exp_col2:
+            st.download_button(
+                "📄 Export Filtered Report (.PDF)",
+                data=build_pdf_report_bytes(filtered_records),
+                file_name=f"naijasight_{st.session_state.username}_report.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+    else:
+        st.warning("No records match your current search or filter.")
 
     st.divider()
+    st.subheader("Reload or Manage a Saved Record")
 
-    st.subheader("Delete activity history")
+    pool_for_selection = filtered_records if filtered_records else records
+    record_map = {
+        f"#{r['id']} — {r['filename']} ({r['word_count']} words, {r['created_at']})": r
+        for r in pool_for_selection
+    }
+    selected_label = st.selectbox("Choose a saved record", list(record_map.keys()))
+    chosen_record = record_map[selected_label]
 
-    st.warning(
-        "This will permanently delete the activity records "
-        "stored for your account."
-    )
+    if chosen_record.get("extracted_text"):
+        with st.expander("Preview retained text"):
+            st.write(chosen_record["extracted_text"])
 
-    confirm_delete = st.checkbox(
-        "I understand that this cannot be undone."
-    )
+    col_reload, col_del_one = st.columns(2)
+    with col_reload:
+        if st.button("📂 Load Text into Workspace", use_container_width=True):
+            st.session_state.extracted_text = chosen_record.get("extracted_text", "")
+            st.session_state.editable_result = chosen_record.get("extracted_text", "")
+            st.session_state.current_filename = chosen_record["filename"]
+            st.session_state.current_file_type = chosen_record["file_type"]
+            st.session_state.nav_page = "Read a document"
+            st.rerun()
 
-    if st.button(
-        "Delete my history",
-        disabled=not confirm_delete
-    ):
+    with col_del_one:
+        if st.button("🗑️ Delete This Record", use_container_width=True):
+            delete_activity_item(chosen_record["id"])
+            st.success("Record deleted.")
+            st.rerun()
 
+    st.divider()
+    st.subheader("Clear All Activity History")
+    st.warning("This permanently deletes all activity records stored under your account.")
+    confirm_delete = st.checkbox("I understand that this cannot be undone.")
+    if st.button("Delete all my history", disabled=not confirm_delete):
         delete_activity()
-
-        st.success(
-            "Your activity history has been deleted."
-        )
-
+        st.success("Your activity history has been deleted.")
         st.rerun()
 
 
 # ============================================================
-# 33. MAIN APPLICATION
+# 33. LOGGED-IN PORTAL ROUTER
 # ============================================================
 
 def render_logged_in_portal():
-
     page = render_sidebar()
+    render_portal_header(page)
 
     if page == "Home":
-
         render_home()
-
     elif page == "Read a document":
-
         render_document_reader()
-
     elif page == "Scan with camera":
-
         render_camera_scanner()
-
     elif page == "Listen to text":
-
         render_listen_page()
-
     elif page == "Voice tools":
-
         render_voice_tools()
-
     elif page == "Activity history":
-
         render_history()
 
     st.divider()
-
     st.caption(
-        "NaijaSight is a prototype. Text recognition and speech "
-        "results may contain errors. Check important information."
+        "NaijaSight Portal | Assistive reading & document intelligence suite. "
+        "Always verify important names, dates, and figures."
     )
 
 
@@ -2050,9 +1829,6 @@ def render_logged_in_portal():
 # ============================================================
 
 if not st.session_state.authenticated:
-
     render_auth_portal()
-
 else:
-
     render_logged_in_portal()
