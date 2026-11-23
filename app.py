@@ -2,9 +2,13 @@ import hashlib
 import html
 import io
 import json
+import os
 import re
 import secrets
+import shutil
 import sqlite3
+import subprocess
+import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
@@ -30,6 +34,12 @@ try:
 except ImportError:
     SPEECH_RECOGNITION_AVAILABLE = False
 
+try:
+    import imageio_ffmpeg
+    IMAGEIO_FFMPEG_AVAILABLE = True
+except ImportError:
+    IMAGEIO_FFMPEG_AVAILABLE = False
+
 
 # ============================================================
 # 1. APPLICATION SETTINGS
@@ -43,7 +53,7 @@ st.set_page_config(
 )
 
 APP_NAME = "NaijaSight"
-APP_VERSION = "2.6-DSN"
+APP_VERSION = "2.7-DSN"
 BASE_DIR = Path(__file__).parent
 DB_PATH = BASE_DIR / "naijasight_portal.db"
 
@@ -759,6 +769,8 @@ defaults = {
     "target_payment_ngn": 0.0,
     "cash_basket_notes": [],
     "last_voice_amount_transcript": "",
+    "rendered_video_bytes": None,
+    "rendered_video_name": "",
 }
 
 for key, value in defaults.items():
@@ -784,6 +796,8 @@ def logout():
     st.session_state.demo_mode = False
     st.session_state.nav_page = "Home"
     st.session_state.cash_basket_notes = []
+    st.session_state.rendered_video_bytes = None
+    st.session_state.rendered_video_name = ""
     clear_current_result()
     st.rerun()
 
@@ -1148,12 +1162,10 @@ SAMPLE_DOCUMENTS = {
 
 
 def parse_spoken_amount_ngn(transcript: str) -> float | None:
-    """Parse spoken or numeric Naira payment targets like '3500' or 'three thousand five hundred'."""
     if not transcript:
         return None
     s = transcript.lower().replace(",", " ").replace("₦", " ").replace("ngn", " ")
 
-    # First check explicit numeric tokens
     num_matches = re.findall(r"\b\d+(?:\.\d{1,2})?\b", s)
     if num_matches:
         try:
@@ -1163,7 +1175,6 @@ def parse_spoken_amount_ngn(transcript: str) -> float | None:
         except ValueError:
             pass
 
-    # Word-based number parser for common spoken payment amounts
     units = {
         "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
         "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
@@ -1241,7 +1252,6 @@ def process_uploaded_document(
 
 
 def detect_naira_banknotes(text: str) -> dict:
-    """Detect Naira banknote denominations and CBN markers from camera/document OCR text."""
     clean = (text or "").strip()
     if not clean:
         return {"notes": [], "total_ngn": 0, "cbn_verified": False}
@@ -1283,7 +1293,6 @@ def detect_naira_banknotes(text: str) -> dict:
 
 
 def analyze_screen_or_receipt(text: str) -> dict:
-    """Detect mobile banking screen, USSD prompt, or POS receipt fields."""
     clean = (text or "").strip()
     if not clean:
         return {}
@@ -1473,10 +1482,8 @@ def analyze_document_triage(text: str, target_payment_ngn: float = 0.0, basket_t
 
 
 def render_payment_target_and_basket(text: str, key_prefix: str):
-    """Render voice/manual payment target controls + multi-note running cash basket."""
     st.markdown("#### 🧮 Payment Target & Running Cash Basket")
 
-    # Voice input to set amount to pay
     with st.expander("🎙️ Say Amount to Pay by Voice"):
         if not SPEECH_RECOGNITION_AVAILABLE:
             st.caption("Voice recognition package unavailable; use the number field below.")
@@ -1514,7 +1521,6 @@ def render_payment_target_and_basket(text: str, key_prefix: str):
     )
     st.session_state.target_payment_ngn = target_amt
 
-    # Multi-note running cash basket controls
     naira_info = detect_naira_banknotes(text)
     basket_notes: list[int] = list(st.session_state.get("cash_basket_notes", []))
     basket_total = float(sum(basket_notes))
@@ -1575,7 +1581,6 @@ def render_instant_browser_tts(
     button_label: str = "🔊 Read Aloud Offline (Zero Data)",
     auto_play: bool = False
 ):
-    """Client-side Web Speech API reader for zero-latency, zero-data offline voice feedback."""
     payload = json.dumps(str(text or "")[:3500], ensure_ascii=False)
     payload = payload.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
     safe_label = html.escape(button_label)
@@ -1721,7 +1726,7 @@ def render_triage_panel(text: str, key_prefix: str):
 
 
 # ============================================================
-# 22. TEXT TO SPEECH & OFFLINE READER
+# 22. TEXT TO SPEECH, OFFLINE READER & VIDEO VOICEOVER ENGINE
 # ============================================================
 
 def create_speech(text, slow=False):
@@ -1734,6 +1739,226 @@ def create_speech(text, slow=False):
     speech.write_to_fp(audio_buffer)
     audio_buffer.seek(0)
     return audio_buffer
+
+
+def resolve_ffmpeg_binary() -> str | None:
+    system_ffmpeg = shutil.which("ffmpeg")
+    if system_ffmpeg:
+        return system_ffmpeg
+    if IMAGEIO_FFMPEG_AVAILABLE:
+        try:
+            exe = imageio_ffmpeg.get_ffmpeg_exe()
+            if exe and os.path.exists(exe):
+                return exe
+        except Exception:
+            pass
+    return None
+
+
+def probe_video_has_audio(ffmpeg_bin: str, video_path: Path) -> bool:
+    """Return True if the input video contains at least one audio stream."""
+    proc = subprocess.run(
+        [ffmpeg_bin, "-i", str(video_path)],
+        capture_output=True,
+        text=True
+    )
+    stderr = proc.stderr or ""
+    return "Audio:" in stderr
+
+
+def probe_video_duration_sec(ffmpeg_bin: str, video_path: Path) -> float | None:
+    proc = subprocess.run(
+        [ffmpeg_bin, "-i", str(video_path)],
+        capture_output=True,
+        text=True
+    )
+    m = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", proc.stderr or "")
+    if not m:
+        return None
+    hours = int(m.group(1))
+    minutes = int(m.group(2))
+    seconds = float(m.group(3))
+    return hours * 3600 + minutes * 60 + seconds
+
+
+def render_embedded_voiceover_video(
+    video_bytes: bytes,
+    commentary_text: str,
+    resolution_choice: str = "1080p (1K · 1920x1080)",
+    existing_audio_mode: str = "Keep & Mix with Commentary",
+    slow_voice: bool = False,
+    enhance_visuals: bool = True,
+    pad_video_to_voice: bool = True,
+) -> tuple[bytes, str]:
+    """
+    Generate speech voiceover from commentary_text, scale/enhance video to 720p/1K/4K,
+    keep or silence existing video audio, and embed the commentary track into an MP4.
+    """
+    clean_script = (commentary_text or "").strip()
+    if not clean_script:
+        raise ValueError("Please enter or generate commentary text for the voiceover.")
+
+    ffmpeg_bin = resolve_ffmpeg_binary()
+    if not ffmpeg_bin:
+        raise RuntimeError(
+            "FFmpeg was not found. Install system ffmpeg or run `pip install imageio-ffmpeg` to embed voiceovers into video."
+        )
+
+    res_map = {
+        "720p (1280x720)": (1280, 720, "2500k"),
+        "1080p (1K · 1920x1080)": (1920, 1080, "5000k"),
+        "4K (3840x2160)": (3840, 2160, "14000k"),
+    }
+    target_w, target_h, video_bitrate = res_map.get(resolution_choice, (1920, 1080, "5000k"))
+
+    # Create MP3 via gTTS (chunked if longer than 4000 chars)
+    chunks = split_text_for_speech(clean_script, max_chars=3800)
+    if not chunks:
+        raise ValueError("Commentary script has no readable words.")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        in_video = tmp_path / "input_video.mp4"
+        out_video = tmp_path / "output_voiceover.mp4"
+        voice_wav = tmp_path / "voiceover_clean.wav"
+
+        in_video.write_bytes(video_bytes)
+
+        # Synthesize each chunk and convert/concat into a single WAV voice track
+        chunk_wavs = []
+        for idx, part in enumerate(chunks):
+            mp3_buf = create_speech(part, slow=slow_voice)
+            part_mp3 = tmp_path / f"part_{idx}.mp3"
+            part_wav = tmp_path / f"part_{idx}.wav"
+            part_mp3.write_bytes(mp3_buf.getvalue())
+
+            conv = subprocess.run(
+                [
+                    ffmpeg_bin, "-y",
+                    "-i", str(part_mp3),
+                    "-ac", "1",
+                    "-ar", "44100",
+                    str(part_wav)
+                ],
+                capture_output=True,
+                text=True
+            )
+            if conv.returncode != 0:
+                raise RuntimeError(f"Audio conversion failed: {conv.stderr[-300:]}")
+            chunk_wavs.append(part_wav)
+
+        if len(chunk_wavs) == 1:
+            shutil.copyfile(chunk_wavs[0], voice_wav)
+        else:
+            concat_list = tmp_path / "concat_list.txt"
+            concat_list.write_text(
+                "\n".join(f"file '{w.as_posix()}'" for w in chunk_wavs),
+                encoding="utf-8"
+            )
+            cat_proc = subprocess.run(
+                [
+                    ffmpeg_bin, "-y",
+                    "-f", "concat",
+                    "-safe", "0",
+                    "-i", str(concat_list),
+                    "-ac", "1",
+                    "-ar", "44100",
+                    str(voice_wav)
+                ],
+                capture_output=True,
+                text=True
+            )
+            if cat_proc.returncode != 0:
+                raise RuntimeError(f"Voice track join failed: {cat_proc.stderr[-300:]}")
+
+        # Build video filter chain: aspect-preserving scale + pad + optional clarity enhancement
+        vf_parts = [
+            f"scale={target_w}:{target_h}:force_original_aspect_ratio=decrease",
+            f"pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2:black",
+        ]
+        if enhance_visuals:
+            vf_parts.append("eq=contrast=1.06:brightness=0.01:saturation=1.08")
+            vf_parts.append("unsharp=5:5:0.6:3:3:0.3")
+        vf_parts.append("format=yuv420p")
+        vf_chain = ",".join(vf_parts)
+
+        has_orig_audio = probe_video_has_audio(ffmpeg_bin, in_video)
+        cmd = [ffmpeg_bin, "-y", "-i", str(in_video), "-i", str(voice_wav)]
+
+        filter_complex_nodes = []
+        audio_map_label = "[aout]"
+
+        if existing_audio_mode == "Silence / Mute Original Audio" or not has_orig_audio:
+            filter_complex_nodes.append("[1:a]aresample=44100,volume=1.15[aout]")
+        else:
+            # Keep original audio at lower ducked volume so commentary stays crisp and intelligible
+            filter_complex_nodes.append(
+                "[0:a]aresample=44100,volume=0.22[orig_duck];"
+                "[1:a]aresample=44100,volume=1.20[vo_loud];"
+                "[orig_duck][vo_loud]amix=inputs=2:duration=longest:dropout_transition=2[aout]"
+            )
+
+        cmd.extend(["-filter_complex", ";".join(filter_complex_nodes)])
+        cmd.extend([
+            "-vf", vf_chain,
+            "-c:v", "libx264",
+            "-preset", "medium",
+            "-b:v", video_bitrate,
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-map", "0:v:0",
+            "-map", audio_map_label,
+            "-movflags", "+faststart",
+        ])
+
+        if pad_video_to_voice:
+            # Keep full voiceover embedded even if the clip is shorter by extending last frame smoothly
+            cmd.extend(["-vf", f"tpad=stop_mode=clone:stop_duration=30,{vf_chain}", "-shortest"])
+        else:
+            cmd.append("-shortest")
+
+        cmd.append(str(out_video))
+
+        # Simpler, rock-solid filter graph without duplicate -vf flags
+        clean_cmd = [
+            ffmpeg_bin, "-y",
+            "-i", str(in_video),
+            "-i", str(voice_wav),
+        ]
+        fc = list(filter_complex_nodes)
+        if pad_video_to_voice:
+            fc.append(f"[0:v]tpad=stop_mode=clone:stop_duration=60,{vf_chain}[vout]")
+        else:
+            fc.append(f"[0:v]{vf_chain}[vout]")
+
+        clean_cmd = [
+            ffmpeg_bin, "-y",
+            "-i", str(in_video),
+            "-i", str(voice_wav),
+            "-filter_complex", ";".join(fc),
+            "-map", "[vout]",
+            "-map", audio_map_label,
+            "-c:v", "libx264",
+            "-preset", "medium",
+            "-b:v", video_bitrate,
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-movflags", "+faststart",
+            "-shortest" if not pad_video_to_voice else "-longest",
+            str(out_video),
+        ]
+
+        # Note: in ffmpeg, -shortest stops when shortest stream ends; if we want full voiceover, omit -shortest
+        if pad_video_to_voice:
+            clean_cmd = [arg for arg in clean_cmd if arg != "-longest"]
+
+        proc = subprocess.run(clean_cmd, capture_output=True, text=True)
+        if proc.returncode != 0 or not out_video.exists():
+            raise RuntimeError(f"Video voiceover rendering failed: {proc.stderr[-400:]}")
+
+        res_tag = "4K" if "4K" in resolution_choice else ("1K_1080p" if "1080p" in resolution_choice else "720p")
+        out_name = f"naijasight_voiceover_{res_tag}.mp4"
+        return out_video.read_bytes(), out_name
 
 
 def split_text_for_speech(text, max_chars=4000):
@@ -2028,11 +2253,11 @@ def render_auth_portal():
         <div class="ns-header-bar">
             <div>
                 <h1>👁️ NaijaSight</h1>
-                <p>Assistive Naira Cash Verification, Running Cash Tally, Screen/Bill Reader & Voice Suite</p>
+                <p>Assistive Naira Cash Verification, Video Voiceover Studio, Screen/Bill Reader & Voice Suite</p>
             </div>
             <div class="ns-chip-row">
+                <span class="ns-chip">720p / 1K / 4K Voiceover</span>
                 <span class="ns-chip">Running Cash Basket</span>
-                <span class="ns-chip">Voice Payment Target</span>
                 <span class="ns-chip">Offline Voice Ready</span>
             </div>
         </div>
@@ -2045,13 +2270,13 @@ def render_auth_portal():
     with col_left:
         st.subheader("Everyday Independence for Blind & Low-Vision Users")
         st.write(
-            "Snap Naira notes one by one into a running cash basket, speak the amount you want to pay, "
-            "read bank or POS screens, triage bills and prescriptions, and listen offline."
+            "Snap Naira notes one by one into a running cash basket, speak payment targets, "
+            "generate and embed voiceovers into 720p/1K/4K videos, triage bills, and listen offline."
         )
         st.markdown(
             """
+            - **Video Voiceover & Commentary Studio:** Generate and embed voiceovers at 720p, 1080p (1K), or 4K with clarity enhancement and original-audio mute/mix control
             - **Multi-Note Cash Basket & Change Check:** Add scanned notes one by one, undo mistakes, and hear totals or expected change
-            - **Voice Payment Target:** Speak your payment target and compare against cash counted or transfer screens
             - **Screen & Document Triage:** Upload bank/POS screenshots, PDFs, Word, Excel, or images with instant key facts
             - **Offline Voice & HTML Reader:** Instant browser speech, optional hands-free auto-read, and standalone offline HTML readers
             - **Accessibility & AI Ethics:** Log real PWD testing observations and maintain transparent safety guardrails
@@ -2129,6 +2354,7 @@ def render_sidebar():
             "Home",
             "Scan with camera",
             "Read a document",
+            "Video voiceover",
             "Listen to text",
             "Voice tools",
             "Activity history",
@@ -2202,8 +2428,8 @@ def render_home():
     cards = [
         ("📷", "Scan with camera", "Snap Naira notes into a running basket, set payment amount by voice or number, and hear totals or change aloud.", "Scan with camera"),
         ("📄", "Read a document", "Upload screenshots of bank/POS apps, PDFs, Word, Excel, or images with instant key-fact triage.", "Read a document"),
+        ("🎬", "Video voiceover", "Generate and embed voiceover commentary into videos at 720p, 1K, or 4K with clarity boost and original-audio mute/mix.", "Video voiceover"),
         ("🔊", "Listen to text", "Read extracted or pasted text aloud offline or in clean MP3 parts and download an offline reader.", "Listen to text"),
-        ("🎙️", "Voice tools", "Record spoken instructions or notes and transcribe them into editable text.", "Voice tools"),
     ]
     columns = st.columns(2, gap="large")
     for index, (symbol, title, description, destination) in enumerate(cards):
@@ -2222,8 +2448,148 @@ def render_home():
 
     st.divider()
     st.subheader("How It Works")
-    st.write("1. Pick a module.  2. Set amount to pay (by voice or number).  3. Snap notes/screens or upload a file & add notes to basket.  4. Listen offline or export.")
-    st.info("Keep banknotes flat and well-lit when snapping, and always confirm final transfer or cash amounts before completing payment.")
+    st.write("1. Pick a module.  2. Set payment targets, snap cash/screens, or upload a video.  3. Generate commentary & embed voiceover.  4. Listen offline or export.")
+    st.info("Keep banknotes flat and well-lit when snapping, and preview your commentary script before embedding into 720p/1K/4K video.")
+
+
+# ============================================================
+# 26B. VIDEO VOICEOVER & EMBEDDED COMMENTARY STUDIO
+# ============================================================
+
+def render_video_voiceover_page():
+    st.subheader("Video Voiceover & Embedded Commentary Studio")
+    st.write(
+        "Upload a video, write or load commentary text, choose whether to keep or silence the existing audio, "
+        "and render a clean 720p, 1K (1080p), or 4K video with the voiceover permanently embedded."
+    )
+
+    ffmpeg_bin = resolve_ffmpeg_binary()
+    if not ffmpeg_bin:
+        st.warning(
+            "FFmpeg is not installed yet. Install `imageio-ffmpeg` (`pip install imageio-ffmpeg`) "
+            "or system `ffmpeg` to render and embed voiceover tracks into video files."
+        )
+
+    uploaded_video = st.file_uploader(
+        "Upload a video file",
+        type=["mp4", "mov", "mkv", "avi", "webm"],
+        max_upload_size=MAX_FILE_SIZE_MB,
+        key="vo_video_uploader"
+    )
+
+    if uploaded_video:
+        st.caption(f"Selected video: **{uploaded_video.name}** ({uploaded_video.size / (1024 * 1024):.2f} MB)")
+        st.video(uploaded_video)
+
+    seed_text = st.session_state.get("extracted_text", "")
+    if st.button("Use current extracted text as commentary script", key="vo_use_extracted"):
+        if seed_text.strip():
+            st.session_state["vo_script_input"] = seed_text.strip()[:3500]
+            st.rerun()
+        else:
+            st.info("No extracted text in the workspace yet.")
+
+    default_script = st.session_state.get("vo_script_input", "")
+    commentary_script = st.text_area(
+        "Voiceover / commentary script (must be clear and accurate before rendering)",
+        value=default_script,
+        height=170,
+        placeholder="Type the exact narration or commentary that will be spoken and embedded into the video...",
+        key="vo_script_input"
+    )
+
+    if commentary_script.strip():
+        render_instant_browser_tts(
+            commentary_script,
+            button_label="🔊 Preview Commentary Offline Before Rendering"
+        )
+
+    c1, c2 = st.columns(2)
+    with c1:
+        resolution_choice = st.selectbox(
+            "Output resolution quality",
+            ["720p (1280x720)", "1080p (1K · 1920x1080)", "4K (3840x2160)"],
+            index=1,
+            key="vo_resolution"
+        )
+        enhance_visuals = st.checkbox(
+            "Apply visual clarity, contrast & color enhancement",
+            value=True,
+            key="vo_enhance_visuals"
+        )
+
+    with c2:
+        existing_audio_mode = st.radio(
+            "Existing video voiceover / audio track",
+            ["Silence / Mute Original Audio", "Keep & Mix with Commentary"],
+            key="vo_existing_audio_mode"
+        )
+        slow_voice = st.checkbox(
+            "Speak commentary at a slower, clearer pace",
+            value=False,
+            key="vo_slow_voice"
+        )
+
+    pad_video_to_voice = st.checkbox(
+        "Hold final frame if voiceover runs slightly longer than the video clip",
+        value=True,
+        key="vo_pad_video"
+    )
+
+    st.warning(
+        "Generating voiceover audio sends the commentary script to Google's text-to-speech service. "
+        "Confirm your commentary text is accurate and free of private information."
+    )
+    vo_consent = st.checkbox(
+        "I confirm the commentary script is accurate and I agree to generate the voiceover audio.",
+        key="vo_consent_chk"
+    )
+
+    can_render = bool(uploaded_video and commentary_script.strip() and vo_consent and ffmpeg_bin)
+    if st.button(
+        "Generate & Embed Voiceover into Video",
+        type="primary",
+        disabled=not can_render,
+        key="vo_render_btn"
+    ):
+        try:
+            t0 = time.perf_counter()
+            raw_video_bytes = check_file_size(uploaded_video)
+            with st.spinner(f"Generating voiceover and rendering {resolution_choice} video..."):
+                out_bytes, out_filename = render_embedded_voiceover_video(
+                    video_bytes=raw_video_bytes,
+                    commentary_text=commentary_script,
+                    resolution_choice=resolution_choice,
+                    existing_audio_mode=existing_audio_mode,
+                    slow_voice=slow_voice,
+                    enhance_visuals=enhance_visuals,
+                    pad_video_to_voice=pad_video_to_voice,
+                )
+            elapsed_ms = round((time.perf_counter() - t0) * 1000, 1)
+            st.session_state.rendered_video_bytes = out_bytes
+            st.session_state.rendered_video_name = out_filename
+            log_activity(
+                f"{uploaded_video.name} [{resolution_choice}]",
+                "video_voiceover",
+                commentary_script
+            )
+            st.success(f"Embedded voiceover video ready in {elapsed_ms} ms.")
+        except Exception as err:
+            st.error(f"Could not generate voiceover video: {err}")
+
+    if st.session_state.get("rendered_video_bytes"):
+        st.divider()
+        st.markdown("#### Rendered Video With Embedded Voiceover")
+        st.video(st.session_state.rendered_video_bytes)
+        st.download_button(
+            "Download Video With Embedded Voiceover (.MP4)",
+            data=st.session_state.rendered_video_bytes,
+            file_name=st.session_state.get("rendered_video_name") or "naijasight_voiceover.mp4",
+            mime="video/mp4",
+            type="primary",
+            use_container_width=True,
+            key="vo_download_btn"
+        )
 
 
 # ============================================================
@@ -2687,9 +3053,9 @@ def render_accessibility_and_ethics():
 
     st.markdown(
         """
-        - **Explicit Consent:** Cloud speech and voice transcription require an explicit user checkbox before sending data.
+        - **Explicit Consent:** Cloud speech, voice transcription, and video voiceover generation require explicit user confirmation before processing.
         - **Low-Vision & Offline Support:** Adjustable editor font size, contrast themes, hands-free auto-speak option, offline browser speech, and standalone offline HTML readers.
-        - **Financial & Medical Reliability Guardrails:** Multi-note cash baskets, payment/change calculations, screen transfer readouts, and OCR confidence scores remind users to verify critical amounts, transfers, and dosages.
+        - **Financial, Video & Accuracy Guardrails:** Multi-note cash baskets, payment/change checks, explicit script review before video embedding, and OCR confidence scores remind users to verify critical details.
         """
     )
 
@@ -2698,7 +3064,7 @@ def render_accessibility_and_ethics():
     with st.form("a11y_feedback_form"):
         tester_group = st.text_input(
             "Tester profile or context",
-            placeholder="e.g., Blind user testing multi-note cash basket / Low-vision mobile tester"
+            placeholder="e.g., Blind user testing video commentary / Low-vision mobile tester"
         )
         severity = st.selectbox("Severity", ["High", "Medium", "Low"])
         issue_found = st.text_area("Issue observed", height=90)
@@ -2739,6 +3105,8 @@ def render_logged_in_portal():
         render_camera_scanner()
     elif page == "Read a document":
         render_document_reader()
+    elif page == "Video voiceover":
+        render_video_voiceover_page()
     elif page == "Listen to text":
         render_listen_page()
     elif page == "Voice tools":
@@ -2750,7 +3118,7 @@ def render_logged_in_portal():
 
     st.divider()
     st.caption(
-        "NaijaSight · Verify important cash amounts, bank transfers, dates, and dosages."
+        "NaijaSight · Verify important cash amounts, bank transfers, commentary scripts, dates, and dosages."
     )
 
 
