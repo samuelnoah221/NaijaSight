@@ -13,3 +13,4 @@ python-pptx
 striprtf
 openpyxl
 SpeechRecognition
+imageio-ffmpeg
